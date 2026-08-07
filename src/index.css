@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Cinzel", Georgia, serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-gold-50: #FCF8F2;
+  --color-gold-100: #F7ECD4;
+  --color-gold-200: #ECCF9A;
+  --color-gold-300: #DFB15F;
+  --color-gold-400: #D2922B;
+  --color-gold-500: #B87A21;
+  --color-gold-600: #99621B;
+  --color-gold-700: #7A4B15;
+  --color-gold-800: #5B350F;
+  --color-gold-900: #3D220A;
+}
+
+body {
+  background-color: #0A0A0C;
+  color: #ECEFF1;
+  font-family: var(--font-sans);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111114;
+}
+::-webkit-scrollbar-thumb {
+  background: #2C2C35;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold-600);
+}
+

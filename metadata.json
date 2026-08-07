@@ -1,0 +1,6 @@
+{
+  "name": "Aurum",
+  "description": "A prestigious, high-end AI Companion powered by NVIDIA NIM (build.nvidia.com) with billing plans in INR via Oxapay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

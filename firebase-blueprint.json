@@ -1,0 +1,285 @@
+{
+  "entities": {
+    "systemSettings": {
+      "title": "System Settings",
+      "description": "Global settings for the application including third-party API configurations initialized/modified by administrators.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Must be 'system' to isolate global config settings under a single document."
+        },
+        "nvidiaNimKey": {
+          "type": "string",
+          "description": "NVIDIA NIM API key used to query build.nvidia.com server-side."
+        },
+        "oxapayKey": {
+          "type": "string",
+          "description": "Merchant API Key from oxapay.com console used to create billing charges."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Database write timestamp."
+        }
+      },
+      "required": ["updatedAt"]
+    },
+    "pricingPlan": {
+      "title": "Pricing Plan",
+      "description": "A customized tier plan created by admin and purchasable in INR currency.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the subscription plan."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the subscription tier."
+        },
+        "priceINR": {
+          "type": "number",
+          "description": "Cost of subscription in Indian Rupees (INR)."
+        },
+        "queriesLimit": {
+          "type": "number",
+          "description": "Number of allowed NVIDIA NIM AI responses (e.g. 50, 1000, or -1 for unlimited)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Summary of plan benefits shown to prospective buyers."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        }
+      },
+      "required": ["id", "name", "priceINR", "queriesLimit", "description", "createdAt"]
+    },
+    "userProfile": {
+      "title": "User Profile",
+      "description": "Information regarding signed-up website users and their current subscription plans.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Firebase Authentication User UID matching google-auth-id."
+        },
+        "email": {
+          "type": "string",
+          "description": "Identified Google Sign-in email address of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Full name display string."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Avatar image URL."
+        },
+        "planId": {
+          "type": "string",
+          "description": "Active pricingPlan ID, or 'free' by default."
+        },
+        "planName": {
+          "type": "string",
+          "description": "Human-readable label of active subscription."
+        },
+        "planExpiresAt": {
+          "type": "string",
+          "description": "Expiration datetime string, 'unlimited', or null."
+        },
+        "queriesCount": {
+          "type": "number",
+          "description": "Queries consumed so far under active plan."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Signup timestamp."
+        }
+      },
+      "required": ["id", "email", "planId", "queriesCount", "createdAt"]
+    },
+    "chatSession": {
+      "title": "Chat Session",
+      "description": "Historical chat logs corresponding to Aurum AI interactions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique chat session identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID associated with the profile owning this chat conversation."
+        },
+        "title": {
+          "type": "string",
+          "description": "User visible chat title summary."
+        },
+        "messages": {
+          "type": "array",
+          "description": "List of sequentially logged chat bubbles: {role: 'user'|'assistant', content: string, timestamp: number}."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last conversation activity."
+        }
+      },
+      "required": ["id", "userId", "title", "messages", "updatedAt"]
+    },
+    "billingTransaction": {
+      "title": "Billing Transaction",
+      "description": "Detailed log tracking Oxapay payments initiated and verified status transitions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique transaction key (often matches internal tracker UID or Oxapay trackId)."
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of user who initiated payment."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Email of user check-out profile."
+        },
+        "planId": {
+          "type": "string",
+          "description": "PricingPlan ID intended for upgrade after payment completes."
+        },
+        "planName": {
+          "type": "string",
+          "description": "Name of price plan associated with the order."
+        },
+        "amount": {
+          "type": "number",
+          "description": "INR purchase amount."
+        },
+        "status": {
+          "type": "string",
+          "description": "Verification gate: 'pending', 'paid', 'failed', or 'expired'."
+        },
+        "trackId": {
+          "type": "number",
+          "description": "Returned invoice identifier tracker generated by Oxapay."
+        },
+        "payUrl": {
+          "type": "string",
+          "description": "Secure payment redirect address from Oxapay."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Payment checkout generation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Callback status transition update datetime."
+        }
+      },
+      "required": ["id", "userId", "planId", "amount", "status", "createdAt", "updatedAt"]
+    },
+    "coupon": {
+      "title": "Coupon Code",
+      "description": "Discount coupons setup by administrators that are usable on specific plans or all plans.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "The coupon code (e.g. FREEAURUM, WELCOME50) in uppercase."
+        },
+        "discount": {
+          "type": "number",
+          "description": "The discount value. E.g. 50 or 100 for percentage, or fixed amount."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["percent", "fixed"],
+          "description": "The coupon type: percentage discount or fixed currency discount."
+        },
+        "planId": {
+          "type": "string",
+          "description": "Allowed plan ID (e.g. 'plan_pro') or 'all' if usable across any tier."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Toggle to enable or disable active application of the code."
+        }
+      },
+      "required": ["code", "discount", "type", "planId", "active"]
+    },
+    "compiledSite": {
+      "title": "Compiled Website",
+      "description": "Multi-page front-end responsive app created by Aurum AI loop.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique site identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Authenticating user UID."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The detailed specifications prompt supplied to configure custom UI design."
+        },
+        "title": {
+          "type": "string",
+          "description": "A shortened human-readable title generated for easy browsing."
+        },
+        "code": {
+          "type": "string",
+          "description": "Raw responsive compiler-produced CSS/HTML output."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Unix timestamp indicating compilation date."
+        },
+        "creditsSpent": {
+          "type": "number",
+          "description": "Total Priority Credits deducted on request launch."
+        }
+      },
+      "required": ["id", "userId", "prompt", "title", "code", "createdAt"]
+    }
+  },
+  "firestore": {
+    "settings": {
+      "schema": "systemSettings",
+      "description": "Isolates administrator keys such as NIM and Oxapay secrets under key 'system' document."
+    },
+    "plans": {
+      "schema": "pricingPlan",
+      "description": "Tiers configured by the admin to upgrade chat capabilities."
+    },
+    "users": {
+      "schema": "userProfile",
+      "description": "User info tracking logins and membership levels."
+    },
+    "chats": {
+      "schema": "chatSession",
+      "description": "Conversations stored securely by user."
+    },
+    "transactions": {
+      "schema": "billingTransaction",
+      "description": "Oxapay payments tracking logs."
+    },
+    "coupons": {
+      "schema": "coupon",
+      "description": "Promotional discounts registered for subscription checkouts."
+    },
+    "sites": {
+      "schema": "compiledSite",
+      "description": "Compiled front-end website records stored securely by user."
+    }
+  }
+}

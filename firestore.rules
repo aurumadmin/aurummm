@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Master Catch-all: Deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helper Privileges ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        (request.auth.token.email == 'teamthunderofficialyt@gmail.com' ||
+         request.auth.token.email == 'freefiregtamcpe@gmail.com');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Schema Helpers ---
+    function isValidSettings(data) {
+      return data.updatedAt is timestamp;
+    }
+
+    function isValidPlan(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.priceINR is number && data.priceINR >= 0 &&
+             data.queriesLimit is number &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.planId is string && data.planId.size() <= 128 &&
+             data.queriesCount is number && data.queriesCount >= 0 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidChat(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.messages is list && data.messages.size() <= 2000 &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.planId is string && data.planId.size() <= 128 &&
+             data.amount is number && data.amount >= 0 &&
+             data.status is string && data.status.size() <= 50 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidCoupon(data) {
+      return data.code is string && data.code.size() <= 100 &&
+             data.discount is number && data.discount >= 0 &&
+             data.type is string && (data.type == 'percent' || data.type == 'fixed') &&
+             data.planId is string && data.planId.size() <= 128 &&
+             data.active is bool;
+    }
+
+    function isValidSite(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.prompt is string && data.prompt.size() <= 5000 &&
+             data.title is string && data.title.size() <= 500 &&
+             data.code is string && data.code.size() <= 2097152 &&
+             data.createdAt is number && data.createdAt >= 0;
+    }
+
+    // --- Document Matching Rules ---
+
+    // 1. Settings Collection
+    match /settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 2. Plans Collection
+    match /plans/{planId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidPlan(incoming());
+      allow update: if isAdmin() && isValidPlan(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 3. Users Collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 4. Chats Collection
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidChat(incoming());
+      allow update: if isSignedIn() &&
+                    existing().userId == request.auth.uid &&
+                    incoming().userId == request.auth.uid &&
+                    isValidChat(incoming());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // 5. Transactions Collection
+    match /transactions/{txId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidTransaction(incoming());
+      allow update: if (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid)) && isValidTransaction(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 6. Coupons Collection
+    match /coupons/{couponId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidCoupon(incoming());
+      allow update: if isAdmin() && isValidCoupon(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 7. Sites Collection
+    match /sites/{siteId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidSite(incoming());
+      allow update: if (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid)) && isValidSite(incoming());
+      allow delete: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+    }
+  }
+}
