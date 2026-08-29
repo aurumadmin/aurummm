@@ -829,28 +829,102 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
       });
     }
 
-    // D. Fetch completions from NVIDIA NIM using the configured Model
+    // D. Fetch completions from HYBRA proxy API with mode mapping and attachment reading
     const systemInstruction = {
       role: 'system',
-      content: 'You are Aurum, a prestigious AI companion. You speak with high-contrast elegance, latin-inspired gold alignments, pristine professional precision, and warm composure. Provide your responses in perfectly structured markdown. Address users respectfully.'
+      content: 'You are Aurum, a prestigious AI assistant. Provide clear, accurate, high quality, well-formatted markdown answers. Identify yourself purely as Aurum. Do NOT state, mention, or disclose any underlying model names, version numbers, or providers unless explicitly asked.'
     };
+
+    // Mode resolution mapping
+    const userMode = req.body.mode || req.body.model || 'default';
+    let primaryModel = 'deepseek-v4-pro-0813'; // Default mode -> DeepSeek V4 Pro
+    if (userMode === 'fast' || userMode === 'deepseek-v4-flash-0731') {
+      primaryModel = 'deepseek-v4-flash-0731'; // Fast mode -> DeepSeek V4 Flash
+    } else if (userMode === 'writing' || userMode === 'claude-haiku-4-5') {
+      primaryModel = 'claude-haiku-4-5'; // Writing mode -> Claude Haiku 4.5
+    } else if (userMode !== 'default' && typeof userMode === 'string' && userMode.length > 2) {
+      primaryModel = userMode;
+    }
+
+    const candidateModels = Array.from(new Set([
+      primaryModel,
+      'deepseek-v4-pro-0813',
+      'deepseek-v4-flash-0731',
+      'claude-haiku-4-5',
+      'gpt-oss-120b'
+    ]));
+
+    // Helper: process image attachments with Gemini Vision so text models get OCR and visual description
+    const processMessagesWithAttachments = async (msgs: any[]) => {
+      const processed = [];
+      for (const m of msgs) {
+        if (m.role === 'system') {
+          processed.push(m);
+          continue;
+        }
+        let raw = typeof m.content === 'string' ? m.content : '';
+        
+        // Find data URLs in format data:image/...;base64,...
+        const imgRegex = /data:(image\/[a-zA-Z0-9-+.]+);base64,([A-Za-z0-9+/=]+)/g;
+        let match;
+        const foundImgs: { mimeType: string; base64: string; full: string }[] = [];
+        
+        while ((match = imgRegex.exec(raw)) !== null) {
+          foundImgs.push({ mimeType: match[1], base64: match[2], full: match[0] });
+        }
+
+        if (foundImgs.length > 0) {
+          let visionAnalysis = '';
+          if (process.env.GEMINI_API_KEY) {
+            try {
+              const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+              for (let idx = 0; idx < foundImgs.length; idx++) {
+                const imgObj = foundImgs[idx];
+                console.log(`[ChatAttachment] Processing image #${idx + 1} (${imgObj.mimeType}) via Gemini Vision...`);
+                const visRes = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash',
+                  contents: [
+                    {
+                      inlineData: {
+                        mimeType: imgObj.mimeType,
+                        data: imgObj.base64
+                      }
+                    },
+                    "Extract all visible text (OCR), code, numbers, charts, diagrams, and visual details from this attachment in meticulous detail so an AI assistant can answer questions about it."
+                  ]
+                });
+                if (visRes.text) {
+                  visionAnalysis += `\n\n🔍 [Visual Analysis & Text/OCR from Attached Image #${idx + 1}]:\n${visRes.text}\n`;
+                }
+              }
+            } catch (vErr: any) {
+              console.warn('[ChatAttachment] Vision helper note:', vErr.message);
+            }
+          }
+
+          // Strip huge raw base64 string to prevent payload overflow while retaining vision analysis
+          let cleanedText = raw;
+          foundImgs.forEach((imgObj, i) => {
+            cleanedText = cleanedText.replace(imgObj.full, `[Attached Image #${i + 1}]`);
+          });
+          cleanedText = `${cleanedText}${visionAnalysis}`;
+          processed.push({ role: m.role, content: cleanedText });
+        } else {
+          processed.push(m);
+        }
+      }
+      return processed;
+    };
+
+    const processedMessages = await processMessagesWithAttachments(messages.slice(-10));
 
     const formattedMessages = [
       systemInstruction,
-      ...messages.slice(-10).map((msg: any) => ({
+      ...processedMessages.map((msg: any) => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
       }))
     ];
-
-    const primaryModel = normalizeNvidiaModel(settingsData?.nvidiaNimChatModel);
-    const candidateModels = Array.from(new Set([
-      primaryModel,
-      'meta/llama-3.3-70b-instruct',
-      'meta/llama-3.1-70b-instruct',
-      'meta/llama-3.1-8b-instruct',
-      'deepseek-ai/deepseek-r1'
-    ]));
 
     // Set streaming headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -860,112 +934,74 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
 
     let fullAnswer = '';
     let success = false;
-    let fallbackInfo = '';
 
-    keyLoop: for (let i = 0; i < Math.min(keysPool.length, 3); i++) {
-      const activeKey = keysPool[i];
+    for (const modelToUse of candidateModels) {
+      if (success) break;
+      try {
+        console.log(`[Chat] Calling HYBRA API at https://hybra.onyx-2f0t.workers.dev/v1/chat/completions (model: ${modelToUse}, mode: ${userMode})`);
+        const apiResponse = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer femboysex',
+            'Accept': 'text/event-stream, application/json'
+          },
+          signal: AbortSignal.timeout(25000),
+          body: JSON.stringify({
+            model: modelToUse,
+            messages: formattedMessages,
+            stream: true
+          })
+        });
 
-      for (const modelToUse of candidateModels) {
-        console.log(`Sending chat request to model (${modelToUse}) using key index ${i}`);
-        
-        try {
-          const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${activeKey}`,
-              'Accept': 'text/event-stream'
-            },
-            signal: AbortSignal.timeout(15000), // 15s timeout for fast switching
-            body: JSON.stringify({
-              model: modelToUse,
-              messages: formattedMessages,
-              temperature: 0.6,
-              top_p: 0.9,
-              max_tokens: 3000,
-              stream: true
-            })
-          });
+        if (apiResponse.ok && apiResponse.body) {
+          const reader = (apiResponse.body as any).getReader();
+          const decoder = new TextDecoder('utf-8');
+          let sseBuffer = '';
 
-          if (apiResponse.ok && apiResponse.body) {
-            const reader = (apiResponse.body as any).getReader();
-            const decoder = new TextDecoder('utf-8');
-            let sseBuffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
 
-              sseBuffer += decoder.decode(value, { stream: true });
-              const lines = sseBuffer.split('\n');
-              sseBuffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed === 'data: [DONE]') continue;
-                if (trimmed.startsWith('data: ')) {
-                  try {
-                    const parsed = JSON.parse(trimmed.substring(6));
-                    const chunkText = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text || '';
-                    if (chunkText) {
-                      fullAnswer += chunkText;
-                      res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
-                      if ((res as any).flush) (res as any).flush();
-                    }
-                  } catch (pErr) {
-                    // Ignore parse errors on partial chunks
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(trimmed.substring(6));
+                  const chunkText = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text || '';
+                  if (chunkText) {
+                    fullAnswer += chunkText;
+                    res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
+                    if ((res as any).flush) (res as any).flush();
                   }
+                } catch (pErr) {
+                  // Ignore partial json chunks
                 }
               }
             }
-
-            if (fullAnswer.trim().length > 0) {
-              success = true;
-              break keyLoop; // Successfully got streaming answer
-            }
-          } else {
-            const errText = await apiResponse.text();
-            console.warn(`Model ${modelToUse} Key index ${i} failed with status ${apiResponse.status}:`, errText.substring(0, 100));
-            fallbackInfo += `${modelToUse} (Status ${apiResponse.status}): ${errText.substring(0, 80)}\n`;
           }
-        } catch (err: any) {
-          console.warn(`Streaming failed for model ${modelToUse} key index ${i}:`, err.message);
-          fallbackInfo += `${modelToUse} (Error): ${err.message}\n`;
-        }
-      }
-    }
 
-    // Gemini Server-side fallback if NVIDIA NIM is unavailable or times out
-    if (!success || fullAnswer.trim().length === 0) {
-      if (process.env.GEMINI_API_KEY) {
-        try {
-          console.log('[Chat] Attempting Gemini API fallback streaming...');
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const geminiPrompt = `${systemInstruction.content}\n\n` + formattedMessages.map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-          const geminiStream = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: [geminiPrompt]
-          });
-          for await (const chunk of geminiStream) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-              fullAnswer += chunkText;
-              res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
-              if ((res as any).flush) (res as any).flush();
-            }
-          }
           if (fullAnswer.trim().length > 0) {
             success = true;
+            break;
           }
-        } catch (gemErr: any) {
-          console.warn('[Chat] Gemini fallback error:', gemErr.message);
+        } else {
+          const errText = await apiResponse.text();
+          console.warn(`[Chat] Model ${modelToUse} returned status ${apiResponse.status}:`, errText.substring(0, 100));
         }
+      } catch (err: any) {
+        console.warn(`[Chat] HYBRA call failed for ${modelToUse}:`, err.message);
       }
     }
 
     if (!success || fullAnswer.trim().length === 0) {
-      // Direct high quality fallback answer so user chat never breaks or shows technical errors
-      fullAnswer = "Hello! I am Aurum, your prestigious AI companion. How can I assist you today with your projects, code, or ideas?";
+      // Fallback response if API service is temporarily unreachable
+      fullAnswer = "I'm having trouble contacting the HYBRA API proxy right now. Please verify connection to https://hybra.onyx-2f0t.workers.dev/ and try again.";
       res.write(`data: ${JSON.stringify({ chunk: fullAnswer })}\n\n`);
       if ((res as any).flush) (res as any).flush();
     }
@@ -1029,6 +1065,113 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
     console.error('Chat routing error:', err);
     return res.status(500).json({ error: 'Internal chat compilation error', details: err.message });
   }
+});
+
+// Image Generation Proxy Route using NVIDIA NIM API
+app.get('/api/image-proxy', async (req, res) => {
+  const prompt = (req.query.prompt as string) || 'artistic masterpiece';
+  const seed = req.query.seed || Math.floor(Math.random() * 100000);
+
+  let settingsData = { ...inMemorySettings };
+  try {
+    const settingsSnap = await db.collection('settings').doc('system').get();
+    if (settingsSnap && settingsSnap.exists) {
+      const liveData = settingsSnap.data();
+      if (liveData) settingsData = { ...settingsData, ...liveData };
+    }
+  } catch {}
+
+  const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+  const keysPool = nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+
+  for (const activeKey of keysPool) {
+    try {
+      console.log(`[ImageGen] Requesting NVIDIA NIM Image Generation for prompt: "${prompt.substring(0, 50)}..."`);
+      
+      // 1. Try NVIDIA NIM OpenAI-compatible image endpoint
+      const nimRes = await fetch('https://integrate.api.nvidia.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${activeKey}`
+        },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          prompt: prompt,
+          model: 'black-forest-labs/flux.1-dev',
+          response_format: 'b64_json'
+        })
+      });
+
+      if (nimRes.ok) {
+        const data = await nimRes.json();
+        const b64 = data.data?.[0]?.b64_json;
+        if (b64) {
+          const imgBuffer = Buffer.from(b64, 'base64');
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          return res.send(imgBuffer);
+        }
+        const imgUrl = data.data?.[0]?.url;
+        if (imgUrl) {
+          const imgFetch = await fetch(imgUrl);
+          if (imgFetch.ok) {
+            const arrayBuf = await imgFetch.arrayBuffer();
+            res.setHeader('Content-Type', imgFetch.headers.get('content-type') || 'image/png');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(Buffer.from(arrayBuf));
+          }
+        }
+      }
+
+      // 2. Try NVIDIA NIM direct Flux endpoint
+      const nimFluxRes = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-1-dev', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${activeKey}`,
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          prompt: prompt,
+          mode: 'base',
+          height: 1024,
+          width: 1024,
+          seed: Number(seed) || 42
+        })
+      });
+
+      if (nimFluxRes.ok) {
+        const fluxData = await nimFluxRes.json();
+        const fluxB64 = fluxData.artifacts?.[0]?.base64 || fluxData.b64_json || fluxData.data?.[0]?.b64_json;
+        if (fluxB64) {
+          const imgBuffer = Buffer.from(fluxB64, 'base64');
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          return res.send(imgBuffer);
+        }
+      } else {
+        const fluxErr = await nimFluxRes.text();
+        console.warn(`[ImageGen] NVIDIA Flux API returned status ${nimFluxRes.status}:`, fluxErr.substring(0, 100));
+      }
+    } catch (err: any) {
+      console.warn('[ImageGen] NVIDIA NIM call exception:', err.message);
+    }
+  }
+
+  // Backup proxy call if NIM API rate limit is reached
+  try {
+    const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&nologo=true&model=flux`;
+    const fRes = await fetch(fallbackUrl, { signal: AbortSignal.timeout(12000) });
+    if (fRes.ok) {
+      const arrayBuf = await fRes.arrayBuffer();
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.send(Buffer.from(arrayBuf));
+    }
+  } catch {}
+
+  return res.status(500).send('Image generation failed');
 });
 
 // 3. Admin Panel Config Update
@@ -1839,8 +1982,83 @@ app.post('/api/v1/chat/completions', async (req, res) => {
 // AURUM ENGINE COMPILER: RESPONSIVE WEBSITE GENERATOR & EDITING ENGINE
 // ---------------------------------------------------------------------------
 
-function cleanAndExtractHtml(rawString: string): string {
-  if (!rawString) return '';
+function validateHtmlCompleteness(html: string): { isComplete: boolean; reason?: string } {
+  if (!html || typeof html !== 'string') {
+    return { isComplete: false, reason: 'Empty or non-string response' };
+  }
+
+  let clean = html.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+
+  // Extract from markdown ```html ... ``` or ``` ... ```
+  const codeBlockMatch = clean.match(/```(?:html|xml)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1] && codeBlockMatch[1].trim().length > 0) {
+    clean = codeBlockMatch[1].trim();
+  } else {
+    clean = clean.replace(/^```(?:html|xml)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  }
+
+  const trimmed = clean.trim();
+
+  // 1. Check for DOCTYPE or <html> start
+  const hasDoctype = /<!doctype\s+html/i.test(trimmed);
+  const hasHtmlTag = /<html/i.test(trimmed);
+  if (!hasDoctype && !hasHtmlTag) {
+    return { isComplete: false, reason: 'Missing <!DOCTYPE html> or <html> tag' };
+  }
+
+  // 2. Check for closing </html>
+  if (!/<\/html>/i.test(trimmed)) {
+    return { isComplete: false, reason: 'Missing </html> closing tag' };
+  }
+
+  // 3. Check for closing </body>
+  if (!/<\/body>/i.test(trimmed)) {
+    return { isComplete: false, reason: 'Missing </body> closing tag' };
+  }
+
+  // 4. Check for closing </head>
+  if (!/<\/head>/i.test(trimmed)) {
+    return { isComplete: false, reason: 'Missing </head> closing tag' };
+  }
+
+  // 5. Check style tags balance
+  const openStyles = (trimmed.match(/<style[^>]*>/gi) || []).length;
+  const closeStyles = (trimmed.match(/<\/style>/gi) || []).length;
+  if (openStyles !== closeStyles) {
+    return { isComplete: false, reason: `Unbalanced <style> tags (${openStyles} open vs ${closeStyles} closed)` };
+  }
+
+  // 6. Check script tags balance
+  const openScripts = (trimmed.match(/<script[^>]*>/gi) || []).length;
+  const closeScripts = (trimmed.match(/<\/script>/gi) || []).length;
+  if (openScripts !== closeScripts) {
+    return { isComplete: false, reason: `Unbalanced <script> tags (${openScripts} open vs ${closeScripts} closed)` };
+  }
+
+  // 7. Check for dangling truncation at end of file before </html>
+  const endHtmlIndex = trimmed.search(/<\/html>/i);
+  const textBeforeEnd = endHtmlIndex !== -1 ? trimmed.substring(0, endHtmlIndex).trim() : trimmed;
+  const lastLine = textBeforeEnd.split('\n').pop()?.trim() || '';
+
+  if (/:\s*$/.test(lastLine)) {
+    return { isComplete: false, reason: `Dangling CSS property or key at end: "${lastLine}"` };
+  }
+
+  if (/[=+\-*/,({[]\s*$/.test(lastLine) && !lastLine.endsWith('/>') && !lastLine.endsWith('>')) {
+    return { isComplete: false, reason: `Dangling code operator or bracket at end: "${lastLine}"` };
+  }
+
+  if (/\b(const|let|var|function|if|for|while|border|color|background|padding|margin|font|display|flex|grid)\b\s*$/i.test(lastLine)) {
+    return { isComplete: false, reason: `Dangling keyword/property at end: "${lastLine}"` };
+  }
+
+  return { isComplete: true };
+}
+
+function cleanAndExtractHtml(rawString: string, userPrompt: string = '', fallbackCode: string = ''): string {
+  const defaultFallback = () => fallbackCode && fallbackCode.length > 50 ? fallbackCode : generateMasterFallbackSiteCode(userPrompt);
+
+  if (!rawString) return defaultFallback();
 
   let clean = rawString.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
 
@@ -1852,21 +2070,36 @@ function cleanAndExtractHtml(rawString: string): string {
     clean = clean.replace(/^```(?:html|xml)?\s*/i, '').replace(/\s*```$/i, '').trim();
   }
 
-  // Ensure DOCTYPE or <html> header is at the start
+  // Detect if output is an ASCII file tree (e.g., contains '├──', '└──', 'src/components', etc.)
+  const isFileTree = clean.includes('├──') || clean.includes('└──') || clean.includes('ai-study-buddy') || clean.includes('src/components/');
+
+  // Ensure DOCTYPE or <html> header is present
   const doctypeIdx = clean.search(/<!doctype\s+html/i);
-  if (doctypeIdx !== -1) {
+  const htmlIdx = clean.search(/<html/i);
+
+  if (!isFileTree && doctypeIdx !== -1) {
     clean = clean.substring(doctypeIdx);
+  } else if (!isFileTree && htmlIdx !== -1) {
+    clean = clean.substring(htmlIdx);
   } else {
-    const htmlIdx = clean.search(/<html/i);
-    if (htmlIdx !== -1) {
-      clean = clean.substring(htmlIdx);
-    }
+    console.warn('[cleanAndExtractHtml] Output lacks valid HTML document or is a file tree. Compiling full master site...');
+    return defaultFallback();
   }
 
   // Truncate any junk trailing after </html>
   const endHtmlIdx = clean.search(/<\/html>/i);
   if (endHtmlIdx !== -1) {
     clean = clean.substring(0, endHtmlIdx + 7);
+  } else {
+    console.warn('[cleanAndExtractHtml] Truncation detected: missing </html>. Utilizing fallback code...');
+    return defaultFallback();
+  }
+
+  // Mandatory Completeness Validation
+  const valResult = validateHtmlCompleteness(clean);
+  if (!valResult.isComplete) {
+    console.warn(`[cleanAndExtractHtml] Validation failed (${valResult.reason}). Utilizing complete fallback site...`);
+    return defaultFallback();
   }
 
   // Sanitize Alpine CDN URL if placeholder '3.x.x' was generated
@@ -2014,7 +2247,7 @@ function generateMasterFallbackSiteCode(userPrompt: string): string {
         </div>
         <div>
           <span class="font-display font-bold text-lg text-white tracking-tight">${displayTitle}</span>
-          <span class="block text-[10px] text-amber-400/90 uppercase tracking-widest font-semibold">Aurum AI App</span>
+          <span class="block text-[10px] text-amber-400/90 uppercase tracking-widest font-semibold">Official Application</span>
         </div>
       </div>
 
@@ -2283,7 +2516,7 @@ function generateMasterFallbackSiteCode(userPrompt: string): string {
         <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
         <span class="text-slate-300 font-medium">${displayTitle}</span>
       </div>
-      <p>&copy; ${new Date().getFullYear()} Aurum AI Engine. Built with luxury precision.</p>
+      <p>&copy; ${new Date().getFullYear()} ${displayTitle}. All rights reserved.</p>
     </div>
   </footer>
 
@@ -2306,13 +2539,114 @@ async function generateAurumSiteCode(
 ): Promise<string> {
   let rawString = '';
 
-  // Order with active working models on NVIDIA NIM API endpoint
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ];
+
+  // Primary AI Engine: Claude Haiku 4.5 via HYBRA proxy API
+  const hybraModels = [
+    'claude-haiku-4-5',
+    'deepseek-v4-pro-0813',
+    'deepseek-v4-flash-0731',
+    'gpt-oss-120b'
+  ];
+
+  for (const hybraModel of hybraModels) {
+    try {
+      console.log(`[AurumEngine] Compiling site code via HYBRA model ${hybraModel}...`);
+      const hRes = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer femboysex'
+        },
+        signal: AbortSignal.timeout(45000),
+        body: JSON.stringify({
+          model: hybraModel,
+          messages: messages,
+          temperature: 0.5,
+          max_tokens: 8192
+        })
+      });
+
+      if (hRes.ok) {
+        const hJson = await hRes.json();
+        rawString = hJson.choices?.[0]?.message?.content || hJson.choices?.[0]?.text || '';
+        if (rawString && rawString.trim().length > 100) {
+          let currentOutput = rawString;
+          let checkVal = validateHtmlCompleteness(currentOutput);
+          
+          let continuationAttempts = 0;
+          while (!checkVal.isComplete && continuationAttempts < 2) {
+            continuationAttempts++;
+            console.warn(`[AurumEngine] Output truncated (${checkVal.reason}). Triggering continuation ${continuationAttempts}/2...`);
+            
+            const lastSnippet = currentOutput.trim().slice(-250);
+            const contMessages = [
+              ...messages,
+              { role: 'assistant', content: currentOutput },
+              { role: 'user', content: `YOUR PREVIOUS RESPONSE WAS TRUNCATED MID-CODE NEAR:\n"${lastSnippet}"\n\nCRITICAL MANDATE: Continue directly from that exact point. DO NOT repeat any already written HTML or markdown blocks. Complete all remaining CSS, JavaScript, HTML tags, and close with </body></html>.` }
+            ];
+
+            try {
+              const cRes = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer femboysex'
+                },
+                signal: AbortSignal.timeout(30000),
+                body: JSON.stringify({
+                  model: hybraModel,
+                  messages: contMessages,
+                  temperature: 0.3,
+                  max_tokens: 4096
+                })
+              });
+
+              if (cRes.ok) {
+                const cJson = await cRes.json();
+                const contChunk = cJson.choices?.[0]?.message?.content || cJson.choices?.[0]?.text || '';
+                if (contChunk && contChunk.trim().length > 0) {
+                  let cleanedChunk = contChunk.replace(/^```(?:html|xml)?\s*/i, '').replace(/\s*```$/i, '').trim();
+                  currentOutput = currentOutput.trim() + '\n' + cleanedChunk;
+                  checkVal = validateHtmlCompleteness(currentOutput);
+                  console.log(`[AurumEngine] Continuation ${continuationAttempts} appended. Validation status: ${checkVal.isComplete}`);
+                } else {
+                  break;
+                }
+              } else {
+                break;
+              }
+            } catch (cErr: any) {
+              console.warn(`[AurumEngine] Continuation call exception:`, cErr.message);
+              break;
+            }
+          }
+
+          if (checkVal.isComplete) {
+            console.log(`[AurumEngine] Successfully compiled complete site code using ${hybraModel}!`);
+            return currentOutput;
+          } else {
+            console.warn(`[AurumEngine] Model ${hybraModel} response incomplete after continuation (${checkVal.reason}). Trying fallback model...`);
+          }
+        }
+      } else {
+        const errText = await hRes.text();
+        console.warn(`[AurumEngine] HYBRA model ${hybraModel} returned status ${hRes.status}:`, errText.substring(0, 100));
+      }
+    } catch (hErr: any) {
+      console.warn(`[AurumEngine] HYBRA call exception for ${hybraModel}:`, hErr.message);
+    }
+  }
+
+  // Backup compiler endpoints via NVIDIA NIM
   const siteCandidateModels = Array.from(new Set([
-    'meta/llama-3.1-70b-instruct',
     'meta/llama-3.3-70b-instruct',
+    'meta/llama-3.1-70b-instruct',
     'mistralai/mistral-large-2-instruct',
     'meta/llama-3.1-405b-instruct',
-    'google/gemma-4-31b-it',
     ...(settingsData?.nvidiaNimModel ? [normalizeNvidiaModel(settingsData.nvidiaNimModel)] : [])
   ]));
 
@@ -2321,7 +2655,7 @@ async function generateAurumSiteCode(
   for (let i = 0; i < Math.min(keysPool.length, 2); i++) {
     const activeKey = keysPool[i];
     for (const targetModel of siteCandidateModels.slice(0, 3)) {
-      console.log(`[AurumEngine] Compiling site layout via NVIDIA NIM model ${targetModel} (key index ${i})...`);
+      console.log(`[AurumEngine] Fallback: Compiling site layout via NVIDIA NIM model ${targetModel} (key index ${i})...`);
       try {
         const modelResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
           method: 'POST',
@@ -2329,7 +2663,7 @@ async function generateAurumSiteCode(
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${activeKey}`
           },
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(25000),
           body: JSON.stringify({
             model: targetModel,
             messages: [
@@ -2344,8 +2678,13 @@ async function generateAurumSiteCode(
           const resJson = await modelResponse.json();
           rawString = resJson.choices?.[0]?.message?.content || '';
           if (rawString && rawString.trim().length > 100) {
-            console.log(`[AurumEngine] Successfully compiled site code via NVIDIA NIM model ${targetModel}`);
-            return rawString;
+            const checkVal = validateHtmlCompleteness(rawString);
+            if (checkVal.isComplete) {
+              console.log(`[AurumEngine] Successfully compiled site code via NVIDIA NIM model ${targetModel}`);
+              return rawString;
+            } else {
+              console.warn(`[AurumEngine] NVIDIA NIM model ${targetModel} output incomplete (${checkVal.reason}).`);
+            }
           }
         } else {
           const errText = await modelResponse.text();
@@ -2357,7 +2696,7 @@ async function generateAurumSiteCode(
     }
   }
 
-  console.log('[AurumEngine] NVIDIA NIM endpoints exhausted or quota reached. Generating high-contrast topic-specific fallback site HTML code...');
+  console.log('[AurumEngine] All AI compiler endpoints exhausted. Generating high-contrast topic-specific fallback site HTML code...');
   return generateMasterFallbackSiteCode(userPrompt);
 }
 
@@ -2365,12 +2704,6 @@ async function generateAurumSiteCode(
 app.post('/api/create-site', authenticateUser, async (req: any, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    if (!isAdminUser(req.user)) {
-      return res.status(503).json({
-        error: 'Site Generation Under Maintenance',
-        message: 'Website generation option is currently under maintenance. Please try again later.'
-      });
-    }
     const { prompt, stepsCount = 3, inspirationFiles } = req.body || {};
     const uid = req.user?.uid || 'anonymous';
     
@@ -2477,39 +2810,50 @@ app.post('/api/create-site', authenticateUser, async (req: any, res) => {
       enhancedPrompt += attachedContext;
     }
 
-    // Query Llama/Nemotron to generate a completely self-contained page
-    const systemPrompt = `You are Aurum Engine, an expert front-end compiler.
-Generate a breathtaking, spectacularly polished Next.js-style or React-style fully functional web application based on the user's specification.
-The application MUST feel like an elite, fully featured, professional multi-page product suite, packed with exquisite layout precision, custom styles, gorgeous backgrounds, and highly active stateful widgets.
+    // Query AI model to generate a completely self-contained page
+    const systemPrompt = `============================================================
+AURUM WEBSITE GENERATION ENGINE — MASTER SYSTEM INSTRUCTION
+============================================================
+You are an expert autonomous AI website builder and senior full-stack frontend engineer.
+Your job is to create a BEAUTIFUL, FUNCTIONAL, ERROR-FREE, RESPONSIVE, PRODUCTION-QUALITY website based on the user's request.
 
-HIGH-END STYLE & BEAUTIFUL BACKGROUND RULES (CRITICAL):
-1. ATMOSPHERIC SCHEMES & HIGH CONTRAST (MANDATORY): The website must NEVER look like a plain, single-colored, or white canvas, and text must NEVER be unreadable black-on-black.
-   - For DARK/COSMIC themes: ALWAYS set '<body class="bg-[#09090b] text-slate-100 font-sans antialiased min-h-screen selection:bg-amber-500/30 selection:text-amber-200">'. All headings MUST explicitly use 'text-white', 'text-slate-100', or vibrant gradient clip text (e.g., 'bg-gradient-to-r from-white via-amber-200 to-amber-400 bg-clip-text text-transparent'). Paragraphs MUST explicitly use 'text-slate-300' or 'text-slate-400'.
-   - Embed multiple glowing, semi-transparent warm, gold, indigo, or colorful ambient radial gradient circles inside absolute positioned wrapper elements with proper z-indices (e.g. 'bg-gradient-to-tr from-[#DFB15F]/20 to-purple-600/10 w-[500px] h-[500px] rounded-full blur-[120px] opacity-70 pointer-events-none absolute top-[-100px] left-[-100px]'). Combine this with decorative dotted modern SVG grids or linear pattern borders.
-   - For LIGHT/ELEGANT themes: Use soft luxury off-white/beige tone schemes, clean gold divider lines, light slate backgrounds, and frosted glass with explicit dark text ('text-slate-900', 'text-slate-800').
-2. FROSTED GLASS & LUXURIOUS SHADOWS: Construct deep, styled component cards with backdrops: 'backdrop-blur-xl bg-white/[0.02] border border-white/[0.08] shadow-[0_24px_50px_-12px_rgba(0,0,0,0.5)]' or similar high-fidelity shadow layouts. Add soft borders that scale slightly on hover.
-3. DETAILED SCROLLABLE CONTENT (MUST BE LARGE & RICH):
-   - Under no circumstances produce a short, small, single-screen presentation unless explicitly requested. Every project must be a full-scale website with generous padding (py-24 to py-36), allowing satisfying, beautiful scrollability.
-   - Include a comprehensive, rich series of sections: fixed blur navbar, heroic display showcase with interactive tags/inputs, functional live workspace panel, complex bento grid product attributes, interactive stats dials, interactive sliders/tier calculators, accordion Q&As, feedback toast forms, and a complete multi-column workspace footer.
-4. PREMIUM TYPOGRAPHY & RATIOS: Pair large elegant "Space Grotesk" or serif headings with highly legible "Inter" paragraphs and monospace labels.
+============================================================
+1. ABSOLUTE BRAND SEPARATION & INDEPENDENCE (CRITICAL)
+============================================================
+AURUM IS THE BUILDER. THE GENERATED WEBSITE IS THE USER'S INDEPENDENT PRODUCT.
+- NEVER place "Aurum", "Aurum AI", "Built with Aurum", "Powered by Aurum", "Created with Aurum", "Made with Aurum", builder watermarks, builder badges, builder UI, builder navigation, or builder credits into the generated website.
+- NEVER mention AI models (Claude, Gemini, DeepSeek, GPT, Llama, etc.) inside the generated website.
+- NEVER generate internal builder UI (AI chat panels, file trees, compiler status, credits, build status, "Edit with AI", builder dashboard controls).
+- NO internal terminology ("compiled app", "AI generated", "compiler", "prompt", "tokens", "credits").
+- The generated website must look like it was independently developed by the USER for their product/brand.
 
-COMPLETENESS & INTERACTIVE RULES (ALL BUTTONS MUST WORK):
-1. MULTI-PAGE ROUTING SYSTEM (MANDATORY): Always simulate a multi-tab system inside the page using AlpineJS router state: 'x-data="{ currentTab: \\'home\\', showCart: false, checkoutDone: false, promoCode: \\'\\', ... }"'.
-   Navbar links and tabs (e.g., 'Home', 'Interactive Tools', 'Features', 'Pricing', 'FAQs', 'Contact') MUST have '@click="currentTab = \\'key\\'"' and change the visible screen content immediately using 'x-show' with smooth transitions ('x-transition:enter="transition ease-out duration-300"...').
-2. ALWAYS FUNCTIONAL: Under no circumstances should buttons display blank links. Every widget, feature toggle, cost formula, list search, or form button MUST do something active:
-   - "Calculator / Dashboard Panel": Let users type metrics, slide selectors, or toggle plan tiers, with alpine formulas recalculating results instantly on screen with animation.
-   - "Live Filters & Search query": Input controls must dynamically search and filter items (e.g. filter team cards, service sheets, or blog cards) instantly.
-   - "Slide-over Checkout Modal": Checkout buttons must trigger a detailed and complete mock purchase summary slide-over modal that checks inputs and displays simulated receipt logs!
-   - "Contact Form Checklist": Senders receive a dynamic sweet success message, pop-up confirmation or custom toast when they click Submit, after validating input criteria.
-   - "Accordion FAQ list": Users toggle Q&A items open and closed with buttery-smooth micro-height adjustments.
-3. IMAGES & PLACEMENTS: Use realistic, highly descriptive Flux prompt strings for '/api/image-proxy?prompt=<encoded_flux_prompt>&seed=<random_number>&model=flux' to fit the brand. NEVER use generic dead placehold.co or lorem-flickr strings.
-4. ABSOLUTE ZERO PLACEHOLDERS: Build everything perfectly. No TODOs, no empty text blocks, no unstyled default alerts.
+============================================================
+2. CRITICAL COMPILER FORMAT REQUIREMENT (STRICT)
+============================================================
+1. YOU MUST OUTPUT A SINGLE, COMPLETE, EXECUTABLE, VALID HTML5 DOCUMENT STARTING WITH '<!DOCTYPE html>' AND ENDING WITH '</html>'.
+2. DO NOT OUTPUT A FILE TREE OR DIRECTORY STRUCTURE (e.g., 'src/components/', 'ai-study-buddy/', '├── index.html').
+3. DO NOT OUTPUT TUTORIALS, DESCRIPTIONS, PREFACES, OR CONVERSATIONAL REMARKS.
+4. ALL STYLING, INTERACTIVE LOGIC (AlpineJS), SVG ICONS (Lucide), AND CONTENT MUST BE INLINE INSIDE THIS SINGLE HTML DOCUMENT.
 
-TAILWIND & ASSET HEADERS:
-1. TO LOAD TAILWIND CSS: You MUST include EXACTLY ONE tag of '<script src="https://cdn.tailwindcss.com"></script>' inside the '<head>'. DO NOT write '<link href="https://cdn.tailwindcss.com" rel="stylesheet">' as that is invalid and disables CSS.
-2. IMPORT ALPINEJS FOR SNAP STATES:
-   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
-3. TAILWIND CUSTOM THEME STYLE:
+============================================================
+3. DESIGN QUALITY & REAL CONTENT
+============================================================
+1. PROFESSIONAL DESIGN: High visual hierarchy, clean typography (Inter & Space Grotesk), high contrast, proper spacing, responsive layouts.
+2. NO PLACEHOLDERS: Generate realistic, useful, domain-specific copy. NO "Lorem ipsum", "Coming soon", "Your text here", or "Example text".
+3. RESPONSIVENESS: Mobile, tablet, laptop, and desktop layouts MUST work without horizontal overflow ('overflow-x-hidden').
+4. ALL INTERACTIVE ELEMENTS WORK:
+   - Navigation links/tabs switch screens with Alpine.js state ('x-data="{ currentTab: \\'home\\', ... }"').
+   - Buttons trigger actions, slide-over modals, or toast notifications.
+   - Forms validate inputs and show success feedback toasts.
+   - Interactive tools (calculators, search filters, accordions) recalculate and update on screen dynamically.
+
+============================================================
+4. TAILWIND & SCRIPTS REQUIRED IN <head>
+============================================================
+1. Tailwind CSS: <script src="https://cdn.tailwindcss.com"></script>
+2. AlpineJS: <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+3. Lucide Icons: <script src="https://unpkg.com/lucide@latest"></script>
+4. Custom Tailwind Theme:
    <script>
      tailwind.config = {
        darkMode: 'class',
@@ -2517,25 +2861,20 @@ TAILWIND & ASSET HEADERS:
          extend: {
            colors: {
              gold: { 50: '#fefdf0', 100: '#fdfbe1', 200: '#faf3b2', 500: '#DFB15F', 600: '#C59A4E', 900: '#725011' },
-             brand: { 50: '#f5f7ff', 100: '#ebf0ff', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' },
-             dark: { 900: '#060608', 950: '#030304', 800: '#0e0e11', 700: '#16161c' }
+             brand: { 50: '#f5f7ff', 100: '#ebf0ff', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' }
            },
            fontFamily: {
              sans: ['Inter', 'sans-serif'],
-             display: ['Space Grotesk', 'sans-serif'],
-             mono: ['JetBrains Mono', 'monospace']
+             display: ['Space Grotesk', 'sans-serif']
            }
          }
        }
      }
    </script>
-4. IMPORT PREMIUM DESIGN FONTS:
-   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;550;600;700&family=Space+Grotesk:wght@500;600;705;750&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-5. LUCIDE GLYPHS:
-   <script src="https://unpkg.com/lucide@latest"></script>
-   To render a Lucide icon, use the tag: \\'<i data-lucide="icon-name" class="w-4 h-4"></i>\\' or \\'<span data-lucide="icon-name"></span>\\' and call \\'lucide.createIcons();\\' at the bottom of the body (e.g. inside a DOMContentLoaded event handler, and re-trigger on Alpine state switch if new icons are loaded).
+5. Google Fonts:
+   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 
-Output ONLY the raw HTML code inside markdown backticks: ` + "```" + `html ... ` + "```" + `. Do not write conversational prefaces or remarks.`;
+Output ONLY the raw HTML code inside markdown backticks: ` + "```" + `html <!DOCTYPE html> ... </html> ` + "```" + `. Do not write conversational prefaces or remarks.`;
 
     const rawString = await generateAurumSiteCode(systemPrompt, enhancedPrompt, settingsData, keysPool);
 
@@ -2546,7 +2885,7 @@ Output ONLY the raw HTML code inside markdown backticks: ` + "```" + `html ... `
       });
     }
     
-    const compiledCode = cleanAndExtractHtml(rawString);
+    const compiledCode = cleanAndExtractHtml(rawString, prompt);
 
     // Deduct stepsCount credits safely
     try {
@@ -2613,12 +2952,6 @@ Output ONLY the raw HTML code inside markdown backticks: ` + "```" + `html ... `
 app.post('/api/edit-site', authenticateUser, async (req: any, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    if (!isAdminUser(req.user)) {
-      return res.status(503).json({
-        error: 'Site Generation Under Maintenance',
-        message: 'Website generation option is currently under maintenance. Please try again later.'
-      });
-    }
     const { siteId, instruction, stepsCount = 1, currentHistory = [] } = req.body || {};
     const uid = req.user?.uid || 'anonymous';
 
@@ -2750,24 +3083,45 @@ app.post('/api/edit-site', authenticateUser, async (req: any, res) => {
       contextOfPreviousEdits = `\nBelow is the history of previous edit instructions applied leading to the current webpage state:\n${editHistoryContext}\n`;
     }
 
-    const systemPrompt = `You are Aurum Engine, an expert front-end compiler.
+    const systemPrompt = `============================================================
+AURUM WEBSITE GENERATION ENGINE — MASTER SYSTEM INSTRUCTION
+============================================================
+You are an expert autonomous AI website builder and senior full-stack frontend engineer.
 Below is the existing HTML webpage code of a standalone website:
 \`\`\`html
 ${existingSite.code}
 \`\`\`
 ${contextOfPreviousEdits}
-The user wants you to edit and update the existing HTML webpage based on their latest instruction.
-Latest Instruction: "${instruction}"
+The user wants you to edit and update the existing HTML webpage based on their latest instruction:
+"${instruction}"
 
-Your task is to accurately apply this edit directly inside the existing HTML webpage code only.
+============================================================
+1. ABSOLUTE BRAND SEPARATION & INDEPENDENCE (CRITICAL)
+============================================================
+AURUM IS THE BUILDER. THE GENERATED WEBSITE IS THE USER'S INDEPENDENT PRODUCT.
+- NEVER place "Aurum", "Aurum AI", "Built with Aurum", "Powered by Aurum", "Created with Aurum", "Made with Aurum", builder watermarks, builder badges, builder UI, builder navigation, or builder credits into the generated website.
+- NEVER mention AI models (Claude, Gemini, DeepSeek, GPT, Llama, etc.) inside the generated website.
+- NEVER generate internal builder UI (AI chat panels, file trees, compiler status, credits, build status, "Edit with AI", builder dashboard controls).
+- NO internal terminology ("compiled app", "AI generated", "compiler", "prompt", "tokens", "credits").
+- Preserve the user's independent brand identity and website purpose.
 
-PREMIUM INTERACTIVITY & STYLE RETENTION RULES (CRITICAL):
-1. ATMOSPHERIC SCHEMES & DESIGN: Preserve the incredibly gorgeous, professional visual style of Google AI Studio and Aurum Engine. Keep and refine deep atmospheric backgrounds with glowing ambient blur gradient lights, mesh grids, or elegant off-white/beige tones with thin golden dividing lines. Any edited or added sections must match this luxurious aesthetic. Ensure standard body or wrappers maintain full structural context.
-2. DETAILED SCROLLABLE CONTENT (MUST BE LARGE & COHESIVE): Revisions must expand, enrich, and mature the product, never shrink or simplify. The layout needs generous paddings (py-24 to py-36), rich detailed copy, multi-tab routing views, interactive tools, statistics grid, calculators, FAQs, and a stylish footer.
-3. ACTIVE STATES & ALL BUTTONS WORKING: Ensure that ALL buttons, widgets, navigation links, filters, checkout dialogs, sliders, calculators, slide-overs, and forms remain completely functional and interact dynamically via AlpineJS. Keep every transition smooth.
-4. If the user asks to add new images, always use the high-quality Flux proxy: '/api/image-proxy?prompt=<encoded_flux_prompt>&seed=<random_number>&model=flux'.
-5. Always structure the output as an absolute, complete, valid self-contained HTML page starting with '<!DOCTYPE html>'. Do NOT produce snippets or abbreviated sections.
-6. Do NOT write conversational introductions, prefaces, or lists. Output ONLY the raw updated HTML inside code blocks: \`\`\`html ... \`\`\`.`;
+============================================================
+2. CRITICAL COMPILER FORMAT REQUIREMENT (STRICT)
+============================================================
+1. YOU MUST OUTPUT A SINGLE, COMPLETE, EXECUTABLE, VALID HTML5 DOCUMENT STARTING WITH '<!DOCTYPE html>' AND ENDING WITH '</html>'.
+2. DO NOT OUTPUT A FILE TREE OR DIRECTORY STRUCTURE (e.g., 'src/components/', 'ai-study-buddy/', '├── index.html').
+3. DO NOT OUTPUT TUTORIALS, DESCRIPTIONS, PREFACES, OR CONVERSATIONAL REMARKS.
+4. ALL STYLING, INTERACTIVE LOGIC (AlpineJS), SVG ICONS (Lucide), AND CONTENT MUST BE INLINE INSIDE THIS SINGLE HTML DOCUMENT.
+
+============================================================
+3. TARGETED REVISION & QUALITY RETENTION
+============================================================
+1. TARGETED EDITING: Apply the requested changes directly inside the existing HTML document without breaking or stripping unrelated existing sections.
+2. NO PLACEHOLDERS: Maintain real, context-aware content. NO "Lorem ipsum", "Coming soon", "Your text here".
+3. INTERACTIVITY: All buttons, navigation links, modals, forms, calculators, and filters must remain fully functional with Alpine.js state.
+4. FLUX IMAGES: If adding new visual assets, use: '/api/image-proxy?prompt=<encoded_flux_prompt>&seed=<random_number>&model=flux'.
+
+Output ONLY the raw updated HTML inside code blocks: \`\`\`html <!DOCTYPE html> ... </html> \`\`\`. Do not write conversational prefaces or remarks.`;
 
     const userEditMsg = `Please edit the webpage code as requested: "${instruction}"`;
     const rawString = await generateAurumSiteCode(systemPrompt, userEditMsg, settingsData, keysPool);
@@ -2779,7 +3133,7 @@ PREMIUM INTERACTIVITY & STYLE RETENTION RULES (CRITICAL):
       });
     }
 
-    const compiledCode = cleanAndExtractHtml(rawString);
+    const compiledCode = cleanAndExtractHtml(rawString, instruction, existingSite.code);
 
     // Deduct 1 credit for edits
     try {

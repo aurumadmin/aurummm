@@ -520,6 +520,7 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatGenerating, setChatGenerating] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [chatMode, setChatMode] = useState<'default' | 'fast' | 'writing'>('default');
   const [imageMode, setImageMode] = useState<boolean>(false);
   const [imageCount, setImageCount] = useState<number>(1);
   const [accountModalOpen, setAccountModalOpen] = useState<boolean>(false);
@@ -1500,137 +1501,24 @@ export default function App() {
 
   const getSiteFiles = (site: any): SiteAssetFile[] => {
     if (!site || !site.code) return [];
-    
-    // Split layout content dynamically to represent a clean, structured React workspace
-    // Extract main CSS from index if any, otherwise default to full tailwind setup
-    const packageJsonContent = {
-      name: "vite-react-modular-app",
-      private: true,
-      version: "1.0.0",
-      type: "module",
-      scripts: {
-        "dev": "vite dev",
-        "build": "vite build",
-        "preview": "vite preview"
-      },
-      dependencies: {
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
-        "lucide-react": "^0.395.0",
-        "motion": "^11.5.4"
-      },
-      devDependencies: {
-        "@vitejs/plugin-react": "^4.3.1",
-        "autoprefixer": "^10.4.19",
-        "postcss": "^8.4.38",
-        "tailwindcss": "^4.0.0",
-        "vite": "^5.3.1"
-      }
-    };
 
-    const viteConfigJS = `import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    host: '0.0.0.0'
-  }
-});`;
-
-    const mainJSX = `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
-import './index.css';
-
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);`;
-
-    const indexCSS = `@import "tailwindcss";
-
-body {
-  margin: 0;
-  background-color: #0c0a09;
-  color: #fafaf9;
-  font-family: 'Inter', system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}`;
-
-    const appJSX = `import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Sparkles, ArrowRight, CheckCircle, Smartphone, Flame } from 'lucide-react';
-
-// Highly polished, multi-file React application component
-export default function App() {
-  const [activeStep, setActiveStep] = useState(0);
-
-  return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between">
-      <header className="border-b border-[#DFB15F]/10 px-6 py-4 flex justify-between items-center bg-neutral-900/40 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-[#DFB15F]" />
-          <span className="font-bold tracking-wider font-sans text-white text-sm">VITE COMPILER ACTIVE</span>
-        </div>
-        <nav className="flex items-center gap-6">
-          <a href="#features" className="text-xs text-neutral-400 hover:text-white transition-colors">Features</a>
-          <a href="#about" className="text-xs text-neutral-400 hover:text-white transition-colors">About</a>
-          <button className="bg-[#DFB15F] text-black text-xs font-semibold px-4 py-2 rounded-lg hover:bg-white transition-all">Launch Console</button>
-        </nav>
-      </header>
-
-      <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-12 flex flex-col items-center justify-center text-center space-y-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="space-y-4"
-        >
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#DFB15F]/10 border border-[#DFB15F]/20 text-[#DFB15F] rounded-full text-[10px] uppercase tracking-wider font-mono">
-            React App Live
-          </span>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white max-w-xl mx-auto leading-tight">
-            Compiled React & JS Web Architecture
-          </h1>
-          <p className="text-neutral-400 text-sm max-w-lg mx-auto">
-            Your single unified webpage prompt was synthesized into modular JSX scripts, dynamic Tailwind layouts, and standalone styling files successfully.
-          </p>
-        </motion.div>
-      </main>
-
-      <footer className="border-t border-neutral-900 px-6 py-4 text-center">
-        <p className="text-[10px] font-mono text-neutral-600 uppercase tracking-widest">© ${new Date().getFullYear()} - REACT COMPILER INTEGRATION</p>
-      </footer>
-    </div>
-  );
-}`;
-
-    // Re-structure workspace output
     const filesList: SiteAssetFile[] = [
-      { name: 'index.html', type: 'html', content: site.code },
-      { name: 'package.json', type: 'html', content: JSON.stringify(packageJsonContent, null, 2) },
-      { name: 'vite.config.js', type: 'html', content: viteConfigJS },
-      { name: 'src/main.jsx', type: 'html', content: mainJSX },
-      { name: 'src/App.jsx', type: 'html', content: appJSX },
-      { name: 'src/index.css', type: 'html', content: indexCSS }
+      { name: 'index.html', type: 'html', content: site.code }
     ];
-    
-    // Add dynamic image proxies as physical images under asset folder
+
+    // Extract asset proxies
     const regex = /\/api\/image-proxy\?[^"']+/g;
     const matches = site.code.match(regex) || [];
     const uniqueUrls = Array.from(new Set(matches)) as string[];
-    
+
     uniqueUrls.forEach((url, index) => {
       filesList.push({
-        name: `public/assets/image-${index + 1}.png`,
+        name: `assets/image-${index + 1}.png`,
         type: 'image',
         url: url
       });
     });
-    
+
     return filesList;
   };
 
@@ -1927,8 +1815,25 @@ export default function App() {
 
     let promptWithAttachments = finalSentPrompt;
     if (attachments.length > 0) {
-      const fileLabels = attachments.map(att => `"${att.name}" (${(att.size / 1024).toFixed(1)} KB)`).join(", ");
-      promptWithAttachments += `\n\n[Uploaded attachments: ${fileLabels}]`;
+      for (const att of attachments) {
+        try {
+          if (att.type.startsWith('image/')) {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(att);
+            });
+            promptWithAttachments += `\n\n[Attached Image: ${att.name}]\n${dataUrl}`;
+          } else {
+            const txt = await att.text();
+            promptWithAttachments += `\n\n[Attached File Content: ${att.name}]\n\`\`\`\n${txt.substring(0, 50000)}\n\`\`\``;
+          }
+        } catch (attErr) {
+          console.warn('Error reading attachment file:', attErr);
+          promptWithAttachments += `\n\n[Attachment: ${att.name} (${(att.size / 1024).toFixed(1)} KB)]`;
+        }
+      }
     }
 
     const existingMessages: MessageBubble[] = currentSession?.messages || [];
@@ -1992,6 +1897,7 @@ export default function App() {
         body: JSON.stringify({
           messages: outgoingMessagesForApi,
           chatId: activeChatId,
+          mode: chatMode,
           imageCount: isImageGeneration ? imageCount : 1
         })
       });
@@ -3097,7 +3003,47 @@ export default function App() {
                   
                   {/* Badge button: Create images & file attachments list */}
                   <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      {/* Mode Level Selector Pills */}
+                      <div className="flex items-center gap-0.5 p-0.5 bg-black/60 border border-gold-900/20 rounded-full shadow-inner select-none">
+                        <button
+                          type="button"
+                          onClick={() => setChatMode('default')}
+                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
+                            chatMode === 'default'
+                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
+                              : 'text-gray-400 hover:text-gold-200'
+                          }`}
+                          title="Default Mode"
+                        >
+                          Default
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChatMode('fast')}
+                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
+                            chatMode === 'fast'
+                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
+                              : 'text-gray-400 hover:text-gold-200'
+                          }`}
+                          title="Fast Mode"
+                        >
+                          Fast
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setChatMode('writing')}
+                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
+                            chatMode === 'writing'
+                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
+                              : 'text-gray-400 hover:text-gold-200'
+                          }`}
+                          title="Writing Mode"
+                        >
+                          Writing
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setImageMode(!imageMode)}
@@ -3123,21 +3069,27 @@ export default function App() {
                       )}
 
                       {imageMode && (
-                        <div className="flex items-center gap-1 p-0.5 bg-black/40 border border-gold-900/10 rounded-full">
-                          <button
-                            type="button"
-                            onClick={() => setImageCount(1)}
-                            className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 1 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                          >
-                            1 Image (5 Cr)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setImageCount(2)}
-                            className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 2 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                          >
-                            2 Images (10 Cr)
-                          </button>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 p-0.5 bg-black/40 border border-gold-900/10 rounded-full">
+                            <button
+                              type="button"
+                              onClick={() => setImageCount(1)}
+                              className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 1 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                            >
+                              1 Image (5 Cr)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setImageCount(2)}
+                              className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 2 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                            >
+                              2 Images (10 Cr)
+                            </button>
+                          </div>
+                          <span className="text-[10px] font-mono text-amber-400/90 bg-amber-950/30 border border-amber-800/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                            Image generation might be slow as it is under beta
+                          </span>
                         </div>
                       )}
                     </div>
@@ -3999,19 +3951,9 @@ export default function App() {
                   Build a full website
                 </h2>
                 <p className="text-xs text-gray-400 max-w-xl leading-relaxed">
-                  Aurum will plan, write, and beautiful-design a magnificent full-scale website using advanced layout engines. Each compilation is optimized to build the highest-quality professional workspace.
+                  Aurum Engine powered by <span className="text-[#DFB15F] font-semibold">Claude Haiku 4.5</span> will architect, write, and design a magnificent full-scale website with atmospheric glassmorphism layouts, glowing ambient themes, and full Alpine.js state reactivity.
                 </p>
               </div>
-
-              {!isAdmin && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 max-w-2xl mx-auto flex items-center gap-3 text-amber-200 text-xs shadow-lg">
-                  <TriangleAlert className="w-5 h-5 text-amber-400 shrink-0" />
-                  <div className="text-left">
-                    <p className="font-bold text-amber-300">Option Under Maintenance</p>
-                    <p className="text-amber-200/80 text-[11px] mt-0.5">Website creation and iterative editing options are currently under maintenance. Enabled for administrators only.</p>
-                  </div>
-                </div>
-              )}
 
               {/* Website prompt generator bar console (Form container matches Image 3 exactly) */}
               <div className="bg-[#111114]/40 border border-[#DFB15F]/10 p-6 rounded-2xl max-w-2xl mx-auto w-full shadow-2xl relative overflow-hidden">
@@ -4331,10 +4273,12 @@ export default function App() {
                         srcDoc={
                           viewingSite.code.includes('<head>')
                             ? viewingSite.code.replace('<head>', `<head><base href="${window.location.origin}/">`)
-                            : `<base href="${window.location.origin}/">${viewingSite.code}`
+                            : viewingSite.code.includes('<!DOCTYPE') || viewingSite.code.includes('<html')
+                            ? viewingSite.code
+                            : `<!DOCTYPE html><html><head><base href="${window.location.origin}/"></head><body>${viewingSite.code}</body></html>`
                         }
                         title="Sandbox compilation frame previewer"
-                        className="w-full h-full border-none bg-white rounded-b-xl"
+                        className="w-full h-full border-none bg-[#09090b] rounded-b-xl"
                         sandbox="allow-scripts allow-popups allow-forms allow-same-origin"
                       />
                     ) : (
