@@ -3465,7 +3465,10 @@ async function boot() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: ['aurum.eu.cc', '.run.app', 'localhost', '127.0.0.1']
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
