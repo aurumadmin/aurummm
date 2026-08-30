@@ -15,10 +15,10 @@ import {
   Globe
 } from 'lucide-react';
 import { PricingPlan } from '../types';
-import { User as FirebaseUser } from 'firebase/auth';
+import { AuthUser } from '../lib/auth';
 
 interface LandingPageProps {
-  user: FirebaseUser | null;
+  user: AuthUser | null;
   onNavigateToAuth: (mode: 'signin' | 'signup') => void;
   onEnterWorkspace: () => void;
   onEnterPricing: () => void;

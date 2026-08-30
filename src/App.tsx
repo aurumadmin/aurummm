@@ -1,30 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-  onAuthStateChanged,
-  User as FirebaseUser
-} from 'firebase/auth';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-  getDocFromServer,
-  arrayUnion,
-  increment
-} from 'firebase/firestore';
-import { db, auth } from './lib/firebase';
-import { handleFirestoreError, OperationType } from './lib/firestore-error';
+import { auth, AuthUser, signOut } from './lib/auth';
 import { UserProfile, PricingPlan, ChatSession, BillingTransaction, MessageBubble, Coupon } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import LandingPage from './components/LandingPage';
@@ -70,19 +45,7 @@ import {
   History
 } from 'lucide-react';
 
-// Establish connection test to satisfy Firestore validation constraints
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
-
-// Initial standard system plans to seed into Firestore if database is empty
+// Initial standard system plans to seed if database is empty
 const BOOTSTRAPPED_PLANS: PricingPlan[] = [
   {
     id: 'plan_free',
@@ -456,7 +419,7 @@ const renderMessageContent = (content: string) => {
 
 export default function App() {
   // Auth and Profile states
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -734,19 +697,31 @@ export default function App() {
       const selectedPlan = systemPlans.find(sp => sp.id === editUserForm.planId) || BOOTSTRAPPED_PLANS.find(sp => sp.id === editUserForm.planId);
       const planName = selectedPlan ? selectedPlan.name : 'Free';
 
-      const userDocRef = doc(db, 'users', editingUser.id);
-      await updateDoc(userDocRef, {
-        planId: editUserForm.planId,
-        planName: planName,
-        queriesCount: Number(editUserForm.queriesCount),
-        topupCredits: Number(editUserForm.topupCredits)
+      const idToken = await user!.getIdToken();
+      const res = await fetch(`/api/admin/users/${editingUser.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          planId: editUserForm.planId,
+          planName: planName,
+          queriesCount: Number(editUserForm.queriesCount),
+          topupCredits: Number(editUserForm.topupCredits)
+        })
       });
 
-      setStatusMsg({ type: 'success', text: `Successfully updated user profile for ${editingUser.displayName || editingUser.email}` });
-      setEditingUser(null);
-      loadAdminOverview();
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${editingUser.id}`);
+      if (res.ok) {
+        setStatusMsg({ type: 'success', text: `Successfully updated user profile for ${editingUser.displayName || editingUser.email}` });
+        setEditingUser(null);
+        loadAdminOverview();
+      } else {
+        const err = await res.json();
+        setStatusMsg({ type: 'error', text: err.error || 'Failed to update user' });
+      }
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Failed to update user' });
     }
   };
 
@@ -755,63 +730,98 @@ export default function App() {
   const latestAccumulatedTextRef = useRef<string>('');
   const adminEmails = ['teamthunderofficialyt@gmail.com', 'freefiregtamcpe@gmail.com'];
 
+  const fetchProfile = async () => {
+    const token = auth.getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/user/profile', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const uData = await res.json();
+        setProfile(uData);
+      }
+    } catch (e) {
+      console.error('Failed to fetch profile:', e);
+    }
+  };
+
+  const fetchChats = async () => {
+    const token = auth.getToken();
+    if (!token) return;
+    try {
+      const res = await fetch('/api/user/chats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const sessions: ChatSession[] = await res.json();
+        sessions.sort((a, b) => {
+          const timeA = new Date((b as any).updatedAt || (b as any).createdAt || 0).getTime();
+          const timeB = new Date((a as any).updatedAt || (a as any).createdAt || 0).getTime();
+          return timeA - timeB;
+        });
+        setChatSessions(sessions);
+      }
+    } catch (e) {
+      console.error('Failed to fetch chats:', e);
+    }
+  };
+
+  const fetchPlans = async () => {
+    try {
+      const res = await fetch('/api/plans');
+      if (res.ok) {
+        const plansList = await res.json();
+        if (plansList.length > 0) {
+          setSystemPlans(plansList);
+        } else {
+          setSystemPlans(BOOTSTRAPPED_PLANS);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch plans:', e);
+    }
+  };
+
+  const fetchCoupons = async () => {
+    try {
+      const res = await fetch('/api/coupons');
+      if (res.ok) {
+        const couponsList = await res.json();
+        setCoupons(couponsList);
+      }
+    } catch (e) {
+      console.error('Failed to fetch coupons:', e);
+    }
+  };
+
   // ---------------------------------------------------------------------------
-  // AUTHENTICATION LOGIC
+  // AUTHENTICATION LOGIC (VPS LOCAL DATABASE)
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       setAuthLoading(true);
-      if (firebaseUser) {
-        setUser(firebaseUser);
+      if (currentUser) {
+        setUser(currentUser);
+        await fetchProfile();
         
-        // Setup / login profile sync
-        const profileRef = doc(db, 'users', firebaseUser.uid);
-        try {
-          const profileSnap = await getDoc(profileRef);
-          
-          if (!profileSnap.exists()) {
-            // First time entry setting
-            const newProfile: UserProfile = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              displayName: firebaseUser.displayName || 'Aurum Seeker',
-              photoURL: firebaseUser.photoURL || '',
-              planId: 'plan_free',
-              planName: 'Free',
-              queriesCount: 0,
-              createdAt: serverTimestamp(),
-              planExpiresAt: null
-            };
-            await setDoc(profileRef, newProfile);
-            setProfile(newProfile);
-          } else {
-            setProfile(profileSnap.data() as UserProfile);
-          }
-          // Determine where they should be sent based on current URL path and state
-          const path = window.location.pathname;
-          if (path === '/app' || path.startsWith('/app/')) {
-            setCurrentView('app');
-          } else if (path === '/admin') {
-            setCurrentView('admin');
-          } else if (path === '/auth') {
-            // If they were at /auth and signed up / signed in, redirect them seamlessly to /app
-            navigate('app', true);
-          } else {
-            // Otherwise allow staying on the home page even when signed up!
-            setCurrentView('home');
-          }
-        } catch (e) {
-          handleFirestoreError(e, OperationType.GET, `users/${firebaseUser.uid}`);
+        const path = window.location.pathname;
+        if (path === '/app' || path.startsWith('/app/')) {
+          setCurrentView('app');
+        } else if (path === '/admin') {
+          setCurrentView('admin');
+        } else if (path === '/auth') {
+          navigate('app', true);
+        } else {
+          setCurrentView('home');
         }
 
-        // Establish admin status
-        const isUserAdmin = !!firebaseUser.email && adminEmails.includes(firebaseUser.email.toLowerCase());
+        const isUserAdmin = !!currentUser.email && adminEmails.includes(currentUser.email.toLowerCase());
         setIsAdmin(isUserAdmin);
       } else {
         setUser(null);
         setProfile(null);
         setIsAdmin(false);
-        // Safely redirect to landing home page if they were inside the app playground or auth screen
         const curPath = window.location.pathname;
         if (curPath === '/app' || curPath.startsWith('/app/') || curPath === '/auth' || curPath === '/admin') {
           navigate('home', true);
@@ -826,180 +836,20 @@ export default function App() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // SYNC USER PROFILE & CHATS REALTIME
+  // SYNC USER DATA & REALTIME CALLS
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!user) return;
+    fetchProfile();
+    fetchChats();
+    fetchUserSites();
+    fetchPlans();
+    fetchCoupons();
 
-    // Realtime User profile synchronization
-    const profileRef = doc(db, 'users', user.uid);
-    const unsubProfile = onSnapshot(profileRef, async (snap) => {
-      if (snap.exists()) {
-        const uData = snap.data() as UserProfile;
-        
-        // Client-side auto-downgrade check when plan matches expiry timestamp
-        if (uData.planId !== 'plan_free' && uData.planExpiresAt && uData.planExpiresAt !== 'unlimited') {
-          const expiresMs = Number(uData.planExpiresAt);
-          if (!isNaN(expiresMs) && Date.now() > expiresMs) {
-            console.log("Client detected expired plan. Resetting plan status.");
-            try {
-              await updateDoc(profileRef, {
-                planId: 'plan_free',
-                planName: 'Free',
-                queriesCount: 0,
-                planExpiresAt: null
-              });
-            } catch (err) {
-              console.error("Auto-downgrade client update failure:", err);
-            }
-            return;
-          }
-        }
-
-        // Daily reset check on client side
-        const currentDateString = new Date().toISOString().split('T')[0];
-        if (uData.lastResetDate !== currentDateString) {
-          try {
-            await updateDoc(profileRef, {
-              queriesCount: 0,
-              lastResetDate: currentDateString
-            });
-            uData.queriesCount = 0;
-            uData.lastResetDate = currentDateString;
-          } catch (resetErr) {
-            console.warn("Client daily reset update error:", resetErr);
-          }
-        }
-
-        setProfile(uData);
-      }
-    }, (e) => {
-      handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
-    });
-
-    // Realtime Client historical chats query
-    const chatsRef = collection(db, 'chats');
-    const qChats = query(chatsRef, where('userId', '==', user.uid));
-    
-    const unsubChats = onSnapshot(qChats, (snap) => {
-      const sessions: ChatSession[] = [];
-      snap.forEach((docSnap) => {
-        sessions.push(docSnap.data() as ChatSession);
-      });
-      // Sort in-memory to avoid missing index errors
-      sessions.sort((a, b) => {
-        const getMillis = (ts: any) => {
-          if (!ts) return 0;
-          if (typeof ts.toMillis === 'function') return ts.toMillis();
-          if (ts.seconds !== undefined) return ts.seconds * 1000 + (ts.nanoseconds || 0) / 1000000;
-          if (ts instanceof Date) return ts.getTime();
-          return Number(ts);
-        };
-        return getMillis(b.updatedAt) - getMillis(a.updatedAt);
-      });
-      setChatSessions(prev => {
-        const firestoreMap = new Map(sessions.map(s => [s.id, s]));
-        // Keep active session in history if snapshot hasn't persisted it yet
-        if (currentSession && !firestoreMap.has(currentSession.id)) {
-          return [currentSession, ...sessions];
-        }
-        return sessions;
-      });
-      
-      // Update active selection to match newer payload if applicable
-      if (currentSession && !chatGenerating) {
-        const updated = sessions.find(s => s.id === currentSession.id);
-        if (updated) setCurrentSession(updated);
-      }
-    }, (e) => {
-      handleFirestoreError(e, OperationType.LIST, 'chats');
-    });
-
-    return () => {
-      unsubProfile();
-      unsubChats();
-    };
-  }, [user]);
-
-  // ---------------------------------------------------------------------------
-  // SYNC SYSTEM PLANS & ADMIN METRICS
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!user) return;
-
-    // Real-time Plans synchronization 
-    const plansRef = collection(db, 'plans');
-    const qPlans = query(plansRef, orderBy('createdAt', 'asc'));
-
-    const unsubPlans = onSnapshot(qPlans, async (snap) => {
-      const plansList: PricingPlan[] = [];
-      snap.forEach((d) => {
-        plansList.push(d.data() as PricingPlan);
-      });
-
-      // Seed standard starting tiers if Firestore does not contain record profiles or misses core tiers
-      const hasCoreNewPlans = plansList.some(p => p.id === 'plan_pro_plus');
-      if ((plansList.length === 0 || !hasCoreNewPlans) && isAdmin) {
-        console.log('Seeding initial premium pricing configurations');
-        try {
-          for (const sp of BOOTSTRAPPED_PLANS) {
-            await setDoc(doc(db, 'plans', sp.id), {
-              ...sp,
-              createdAt: serverTimestamp()
-            });
-          }
-        } catch (e) {
-          console.error('Seeding error:', e);
-        }
-      }
-      setSystemPlans(plansList);
-    }, (e) => {
-      handleFirestoreError(e, OperationType.LIST, 'plans');
-    });
-
-    // Real-time Coupons synchronization
-    const couponsRef = collection(db, 'coupons');
-    const unsubCoupons = onSnapshot(couponsRef, async (snap) => {
-      const couponsList: Coupon[] = [];
-      snap.forEach((d) => {
-        couponsList.push(d.data() as Coupon);
-      });
-
-      // If coupons are empty, populate standard default codes securely
-      if (couponsList.length === 0 && isAdmin) {
-        console.log('Seeding initial promotional coupons');
-        const defaultCoupons: Coupon[] = [
-          { code: 'FREE', discount: 100, type: 'percent', planId: 'all', active: true },
-          { code: 'FREEAURUM', discount: 100, type: 'percent', planId: 'all', active: true },
-          { code: 'AURUM100', discount: 100, type: 'percent', planId: 'all', active: true },
-          { code: 'WELCOME50', discount: 50, type: 'percent', planId: 'all', active: true },
-          { code: 'DISCOUNT50', discount: 50, type: 'percent', planId: 'all', active: true },
-          { code: 'AURUM50', discount: 50, type: 'percent', planId: 'all', active: true },
-          { code: 'AURUM20', discount: 20, type: 'percent', planId: 'all', active: true }
-        ];
-        try {
-          for (const c of defaultCoupons) {
-            await setDoc(doc(db, 'coupons', c.code), c);
-          }
-        } catch (err) {
-          console.error('Seeding coupons error:', err);
-        }
-      }
-      setCoupons(couponsList);
-    }, (e) => {
-      handleFirestoreError(e, OperationType.LIST, 'coupons');
-    });
-
-    // Load admin panel dashboard overview metrics
     if (isAdmin) {
       loadAdminOverview();
       fetchMaskedAdminSettings();
     }
-
-    return () => {
-      unsubPlans();
-      unsubCoupons();
-    };
   }, [user, isAdmin]);
 
 
@@ -1048,25 +898,42 @@ export default function App() {
 
   const handleCreateCoupon = async (coupon: Coupon) => {
     try {
-      await setDoc(doc(db, 'coupons', coupon.code), coupon);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `coupons/${coupon.code}`);
+      const idToken = await user!.getIdToken();
+      await fetch('/api/admin/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify(coupon)
+      });
+      fetchCoupons();
+    } catch (err: any) {
+      console.error('Failed to create coupon:', err);
     }
   };
 
   const handleToggleCoupon = async (code: string, active: boolean) => {
     try {
-      await updateDoc(doc(db, 'coupons', code), { active });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `coupons/${code}`);
+      const idToken = await user!.getIdToken();
+      await fetch(`/api/admin/coupons/${encodeURIComponent(code)}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ active })
+      });
+      fetchCoupons();
+    } catch (err: any) {
+      console.error('Failed to toggle coupon:', err);
     }
   };
 
   const handleDeleteCoupon = async (code: string) => {
     try {
-      await deleteDoc(doc(db, 'coupons', code));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `coupons/${code}`);
+      const idToken = await user!.getIdToken();
+      await fetch(`/api/admin/coupons/${encodeURIComponent(code)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      fetchCoupons();
+    } catch (err: any) {
+      console.error('Failed to delete coupon:', err);
     }
   };
 
@@ -1113,21 +980,24 @@ export default function App() {
     setStatusMsg(null);
 
     const planId = 'plan_' + newPlan.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const planRef = doc(db, 'plans', planId);
-
     try {
-      await setDoc(planRef, {
-        id: planId,
-        name: newPlan.name,
-        priceINR: Number(newPlan.priceINR),
-        queriesLimit: Number(newPlan.queriesLimit),
-        description: newPlan.description,
-        createdAt: serverTimestamp()
+      const idToken = await user!.getIdToken();
+      await fetch('/api/admin/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({
+          id: planId,
+          name: newPlan.name,
+          priceINR: Number(newPlan.priceINR),
+          queriesLimit: Number(newPlan.queriesLimit),
+          description: newPlan.description
+        })
       });
       setStatusMsg({ type: 'success', text: `Plan "${newPlan.name}" updated successfully` });
       setNewPlan({ name: '', priceINR: 249, queriesLimit: 100, description: '' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `plans/${planId}`);
+      fetchPlans();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Failed creating plan' });
     }
   };
 
@@ -1136,10 +1006,15 @@ export default function App() {
     if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'plans', id));
+      const idToken = await user!.getIdToken();
+      await fetch(`/api/admin/plans/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
       setStatusMsg({ type: 'success', text: `Plan "${name}" deleted` });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `plans/${id}`);
+      fetchPlans();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Failed deleting plan' });
     }
   };
 
@@ -1158,7 +1033,11 @@ export default function App() {
       if (currentSession?.id === sessionId) {
         setCurrentSession(null);
       }
-      await deleteDoc(doc(db, 'chats', sessionId));
+      const idToken = await user!.getIdToken();
+      await fetch(`/api/user/chats/${sessionId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
     } catch (err: any) {
       console.error("Failed to delete session:", err);
     }
@@ -1184,17 +1063,18 @@ export default function App() {
     }
   };
 
-  // Load compiled sites from Firestore
+  // Load compiled sites from server database
   const fetchUserSites = async () => {
     if (!user) return;
     try {
-      const q = query(collection(db, 'sites'), where('userId', '==', user.uid));
-      const snap = await getDocs(q);
-      const sites: any[] = [];
-      snap.forEach(docSnap => sites.push(docSnap.data()));
-      // Sort in-memory to prevent index errors
-      sites.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
-      setUserSites(sites);
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/user/sites', {
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      if (res.ok) {
+        const sites = await res.json();
+        setUserSites(sites || []);
+      }
     } catch (e) {
       console.error("fetch Sites error:", e);
     }
@@ -1204,14 +1084,6 @@ export default function App() {
     if (!user) return;
     setSiteDeletingId(siteId);
     try {
-      // Delete document directly on client Firestore first so it never reappears on reload
-      try {
-        await deleteDoc(doc(db, 'sites', siteId));
-        console.log(`[Firestore] Site ${siteId} deleted directly from user Firestore database.`);
-      } catch (fsErr) {
-        console.warn("Client site doc delete error:", fsErr);
-      }
-
       const idToken = await user.getIdToken();
       const res = await fetch('/api/delete-site', {
         method: 'POST',
@@ -1448,26 +1320,8 @@ export default function App() {
         if (!d || !d.site) {
           throw new Error(d?.error || d?.message || 'Site compilation payload was incomplete.');
         }
-        
-        // Save the generated site from the client side to bypass server sandbox permission limits
-        try {
-          await setDoc(doc(db, 'sites', d.site.id), d.site);
-          console.log("Newly generated site successfully stored on user's Firestore collection.");
-        } catch (fsErr) {
-          console.warn("Client site registration skipped (could exist already or missing index):", fsErr);
-        }
 
-        // Deduct priority credits on client side for premium site generation
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          const cost = numPages + numImages + 2;
-          await updateDoc(userDocRef, {
-            queriesCount: increment(cost)
-          });
-          console.log(`[Credits] Successfully deducted generator cost of ${cost} credits on client.`);
-        } catch (dbErr) {
-          console.warn('Credits decrement client fallback bypassed:', dbErr);
-        }
+        fetchProfile();
 
         setUserSites(prev => [d.site, ...prev]);
         setViewingSite(d.site);
@@ -1564,12 +1418,7 @@ export default function App() {
         const data = await res.json();
         const updatedSite = data.site;
 
-        // Save updated site to local firestore cache if possible
-        try {
-          await setDoc(doc(db, 'sites', updatedSite.id), updatedSite);
-        } catch (fsErr) {
-          console.warn("Client site revert registration skipped:", fsErr);
-        }
+        fetchProfile();
 
         setUserSites(prev => prev.map(s => s.id === updatedSite.id ? updatedSite : s));
         setViewingSite(updatedSite);
@@ -1678,23 +1527,7 @@ export default function App() {
         }
         const updatedSite = data.site;
 
-        // Deduct credit in Firestore for user
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          await updateDoc(userDocRef, {
-            queriesCount: increment(1)
-          });
-          console.log("[Credits] Deducted edit credit of 1 on client side.");
-        } catch (dbErr) {
-          console.warn("[Credits] Skip client side decrement:", dbErr);
-        }
-
-        // Save updated site to local firestore cache
-        try {
-          await setDoc(doc(db, 'sites', updatedSite.id), updatedSite);
-        } catch (fsErr) {
-          console.warn("Client site update registration skipped:", fsErr);
-        }
+        fetchProfile();
 
         setUserSites(prev => prev.map(s => s.id === updatedSite.id ? updatedSite : s));
         setViewingSite(updatedSite);
@@ -1859,7 +1692,7 @@ export default function App() {
     setImageMode(false);
 
     // Generate stable chatId immediately for instant history entry
-    const activeChatId = currentSession?.id || doc(collection(db, 'chats')).id;
+    const activeChatId = currentSession?.id || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(4, 9));
     const sessionTitle = currentSession?.title || (messageText.length > 28 ? messageText.substring(0, 28) + '...' : messageText);
 
     // optimistically align panel user bubble and add initial assistant streaming bubble
@@ -1969,33 +1802,7 @@ export default function App() {
                     return updatedSession;
                   });
 
-                  // Client fallback save if needed
-                  if (eventData.saveOnClient && eventData.newMessages) {
-                    try {
-                      const chatDocRef = doc(db, 'chats', eventData.chatId);
-                      const chatSnap = await getDoc(chatDocRef);
-                      if (!chatSnap.exists()) {
-                        await setDoc(chatDocRef, {
-                          id: eventData.chatId,
-                          userId: user.uid,
-                          title: eventData.title || tempSession.title,
-                          messages: eventData.newMessages,
-                          updatedAt: serverTimestamp()
-                        });
-                      } else {
-                        await updateDoc(chatDocRef, {
-                          messages: arrayUnion(...eventData.newMessages),
-                          updatedAt: serverTimestamp()
-                        });
-                      }
-                      const userDocRef = doc(db, 'users', user.uid);
-                      await updateDoc(userDocRef, {
-                        queriesCount: increment(1)
-                      });
-                    } catch (dbErr) {
-                      console.warn('Client-side sync fallback bypassed:', dbErr);
-                    }
-                  }
+                  fetchProfile();
                 }
 
                 if (eventData.error) {
@@ -2068,32 +1875,7 @@ export default function App() {
             return [finalSession, ...filtered];
           });
 
-          if (data.saveOnClient && data.newMessages) {
-            try {
-              const chatDocRef = doc(db, 'chats', data.chatId);
-              const chatSnap = await getDoc(chatDocRef);
-              if (!chatSnap.exists()) {
-                await setDoc(chatDocRef, {
-                  id: data.chatId,
-                  userId: user.uid,
-                  title: data.title || tempSession.title,
-                  messages: data.newMessages,
-                  updatedAt: serverTimestamp()
-                });
-              } else {
-                await updateDoc(chatDocRef, {
-                  messages: arrayUnion(...data.newMessages),
-                  updatedAt: serverTimestamp()
-                });
-              }
-              const userDocRef = doc(db, 'users', user.uid);
-              await updateDoc(userDocRef, {
-                queriesCount: increment(isImageGeneration ? (imageCount * 5) : 1)
-              });
-            } catch (dbErr) {
-              console.warn('Client-side sync fallback bypassed:', dbErr);
-            }
-          }
+          fetchProfile();
         }
       }
     } catch (err: any) {
@@ -2228,65 +2010,49 @@ export default function App() {
       const discountVal = Math.round(basePrice * appliedDiscount);
       const finalPrice = Math.max(0, basePrice - discountVal);
 
-      // 1. Direct user profile write in Firestore
-      const userDocRef = doc(db, 'users', user.uid);
-      const isTopup = plan.id.startsWith('topup_');
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/checkout/activate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          plan,
+          couponCode,
+          finalPrice
+        })
+      });
 
-      if (isTopup) {
-        // Resolve credit increment count from topup pack definition
-        let creditsToIncrement = 100; // topup_starter
-        if (plan.id === 'topup_power') creditsToIncrement = 500;
-        if (plan.id === 'topup_pro') creditsToIncrement = 1500;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          setProfile(data.profile);
+        } else {
+          fetchProfile();
+        }
 
-        await updateDoc(userDocRef, {
-          topupCredits: increment(creditsToIncrement),
-          updatedAt: Date.now()
+        // Show gorgeous toast/status message
+        const isTopup = (plan as any).isTopup || plan.id.includes('topup');
+        setStatusMsg({
+          type: 'success',
+          text: isTopup 
+            ? `🎉 Refill processed successfully! Your high priority coins have been added!`
+            : `🎉 Order processed successfully! You are now subscribed to Aurum ${plan.name}!`
         });
+
+        // Clear checkout selections
+        setSelectedCheckoutPlan(null);
+        setCouponCode('');
+        setAppliedDiscount(0);
+        setCouponSuccess(null);
+        
+        // Navigate user back to playground active workspace
+        setActiveTab('chat');
       } else {
-        // Upgrading queries limits and tier identifiers for standard subscriptions
-        await updateDoc(userDocRef, {
-          planId: plan.id,
-          planName: plan.name,
-          queriesCount: 0,
-          planExpiresAt: plan.id === 'plan_free' ? null : (Date.now() + 30 * 24 * 60 * 60 * 1000), // bought system plans run for 30 days
-          updatedAt: Date.now()
-        });
+        const err = await res.json();
+        setStatusMsg({ type: 'error', text: err.error || 'Failed activating order.' });
       }
-
-      // 2. Create the Transaction receipt in Firestore
-      const txId = `tx_order_${Date.now()}_${Math.random().toString(36).substring(4, 9)}`;
-      const receiptDocRef = doc(db, 'transactions', txId);
-      await setDoc(receiptDocRef, {
-        id: txId,
-        userId: user.uid,
-        userEmail: user.email,
-        planId: plan.id,
-        planName: plan.name,
-        amount: finalPrice,
-        status: 'paid', // activated free of charge or coupon discount
-        type: isTopup ? 'topup_order' : 'subscription_order',
-        couponUsed: couponCode.trim().toUpperCase() || 'none',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      // Show gorgeous toast/status message
-      setStatusMsg({
-        type: 'success',
-        text: isTopup 
-          ? `🎉 Refill processed successfully! Your high priority coins have been added!`
-          : `🎉 Order processed successfully! You are now subscribed to Aurum ${plan.name}!`
-      });
-
-      // Clear checkout selections
-      setSelectedCheckoutPlan(null);
-      setCouponCode('');
-      setAppliedDiscount(0);
-      setCouponSuccess(null);
-      
-      // Navigate user back to playground active workspace
-      setActiveTab('chat');
-
     } catch (err: any) {
       console.error('Order checkout exception:', err);
       setStatusMsg({ type: 'error', text: err.message || 'Unable to update profile authorization.' });
@@ -2299,39 +2065,22 @@ export default function App() {
     if (!user) return;
     setAuthLoading(true);
     try {
-      // Re-read Firestore user document to see if callback processed and upgraded plan
-      const profileRef = doc(db, 'users', user.uid);
-      const snap = await getDoc(profileRef);
-      if (snap.exists()) {
-        const uData = snap.data() as UserProfile;
-        setProfile(uData);
-        if (uData.planId !== 'plan_free') {
-          setStatusMsg({
-            type: 'success',
-            text: `🎉 Access unlocked! Welcome to ${uData.planName || 'your premium tier'}.`
-          });
-          setActiveTx(null);
-          setActiveTab('chat');
-        } else {
-          setStatusMsg({
-            type: 'error',
-            text: "🔍 Payment status pending on Oxapay. If you finished payment, wait a moment and verify again."
-          });
-        }
+      await fetchProfile();
+      if (profile && profile.planId !== 'plan_free') {
+        setStatusMsg({
+          type: 'success',
+          text: `🎉 Access unlocked! Welcome to ${profile.planName || 'your premium tier'}.`
+        });
+        setActiveTx(null);
+        setActiveTab('chat');
+      } else {
+        setStatusMsg({
+          type: 'error',
+          text: "🔍 Payment status pending on Oxapay. If you finished payment, wait a moment and verify again."
+        });
       }
     } catch (e) {
       console.error(e);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setAuthLoading(true);
-    try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch (err) {
-      console.error('Sign-in failed:', err);
     } finally {
       setAuthLoading(false);
     }
@@ -2393,7 +2142,6 @@ export default function App() {
       <AuthPage
         onBackToHome={() => navigate('home')}
         onSuccess={() => navigate('app')}
-        handleGoogleSignIn={handleGoogleSignIn}
         preferredTab={initialAuthTab}
       />
     );
@@ -2405,7 +2153,6 @@ export default function App() {
       <AuthPage
         onBackToHome={() => navigate('home')}
         onSuccess={() => navigate('app')}
-        handleGoogleSignIn={handleGoogleSignIn}
         preferredTab="signin"
       />
     );
@@ -2452,29 +2199,44 @@ export default function App() {
         }}
         onSubmitPlan={async (planName, priceINR, queriesLimit, description) => {
           const planId = 'plan_' + planName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-          const planRef = doc(db, 'plans', planId);
-
           try {
-            await setDoc(planRef, {
-              id: planId,
-              name: planName,
-              priceINR: Number(priceINR),
-              queriesLimit: Number(queriesLimit),
-              description: description,
-              createdAt: serverTimestamp()
+            const idToken = await user!.getIdToken();
+            const res = await fetch('/api/admin/plans', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                id: planId,
+                name: planName,
+                priceINR: Number(priceINR),
+                queriesLimit: Number(queriesLimit),
+                description: description
+              })
             });
-            setStatusMsg({ type: 'success', text: `Plan "${planName}" updated successfully` });
-          } catch (err) {
-            handleFirestoreError(err, OperationType.WRITE, `plans/${planId}`);
+            if (res.ok) {
+              setStatusMsg({ type: 'success', text: `Plan "${planName}" updated successfully` });
+              fetchPlans();
+            }
+          } catch (err: any) {
+            setStatusMsg({ type: 'error', text: err.message || 'Error saving plan' });
           }
         }}
         onDeletePlan={async (id, name) => {
           if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
           try {
-            await deleteDoc(doc(db, 'plans', id));
-            setStatusMsg({ type: 'success', text: `Plan "${name}" deleted` });
-          } catch (err) {
-            handleFirestoreError(err, OperationType.DELETE, `plans/${id}`);
+            const idToken = await user!.getIdToken();
+            const res = await fetch(`/api/admin/plans/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${idToken}` }
+            });
+            if (res.ok) {
+              setStatusMsg({ type: 'success', text: `Plan "${name}" deleted` });
+              fetchPlans();
+            }
+          } catch (err: any) {
+            setStatusMsg({ type: 'error', text: err.message || 'Error deleting plan' });
           }
         }}
         onSaveUserEdit={async (userId, planId, queriesCount, topupCredits) => {
@@ -2482,19 +2244,27 @@ export default function App() {
             const selectedPlan = systemPlans.find(sp => sp.id === planId) || BOOTSTRAPPED_PLANS.find(sp => sp.id === planId);
             const planName = selectedPlan ? selectedPlan.name : 'Free';
 
-            const userDocRef = doc(db, 'users', userId);
-            await updateDoc(userDocRef, {
-              planId: planId,
-              planName: planName,
-              queriesCount: Number(queriesCount),
-              topupCredits: Number(topupCredits),
-              planExpiresAt: planId === 'plan_free' ? null : (Date.now() + 30 * 24 * 60 * 60 * 1000)
+            const idToken = await user!.getIdToken();
+            const res = await fetch(`/api/admin/users/${userId}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                planId,
+                planName,
+                queriesCount,
+                topupCredits
+              })
             });
 
-            setStatusMsg({ type: 'success', text: `Successfully updated user profile` });
-            loadAdminOverview();
-          } catch (err) {
-            handleFirestoreError(err, OperationType.WRITE, `users/${userId}`);
+            if (res.ok) {
+              setStatusMsg({ type: 'success', text: `Successfully updated user profile` });
+              loadAdminOverview();
+            }
+          } catch (err: any) {
+            setStatusMsg({ type: 'error', text: err.message || 'Error updating user' });
           }
         }}
         statusMsg={statusMsg}

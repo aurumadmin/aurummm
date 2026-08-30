@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import admin from 'firebase-admin';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import crypto from 'crypto';
+import { localDb as db, FieldValue } from './server/localDb.ts';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -18,9 +18,6 @@ function normalizeNvidiaModel(modelName?: string): string {
   return 'meta/llama-3.3-70b-instruct';
 }
 
-// Load Firebase configuration
-import firebaseConfig from './firebase-applet-config.json' assert { type: 'json' };
-
 const app = express();
 const PORT = 3000;
 
@@ -33,18 +30,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Initialize Firebase Admin SDK
-try {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
-  console.log('Firebase Admin SDK initialized successfully');
-} catch (err) {
-  console.error('Error during Firebase Admin SDK initialization:', err);
-}
-
-// Bind to custom named database
-const db = getFirestore(undefined, firebaseConfig.firestoreDatabaseId);
+console.log('[Aurum VPS Database] Initialized local server-side persistent database');
 
 // Shared in-memory and disk cache for compiled web preview compatibility
 const siteCodeCache = new Map<string, string>();
@@ -114,26 +100,36 @@ async function seedSettingsDatabase() {
 }
 
 // ---------------------------------------------------------------------------
-// MIDDLEWARE: Authenticate Firebase user from client request
+// MIDDLEWARE: Authenticate user from local session token on VPS
 // ---------------------------------------------------------------------------
 async function authenticateUser(req: any, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing ID token' });
+    return res.status(401).json({ error: 'Unauthorized: Missing authorization session token' });
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  const token = authHeader.split('Bearer ')[1].trim();
+  const session = db.verifySession(token);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
+  }
+
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const userDoc = await db.collection('users').doc(session.userId).get();
+    if (!userDoc.exists) {
+      return res.status(401).json({ error: 'Unauthorized: User account not found' });
+    }
+
+    const userData = userDoc.data();
     req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email || '',
-      email_verified: decodedToken.email_verified || false,
+      uid: session.userId,
+      email: session.email || userData.email || '',
+      email_verified: true,
     };
     next();
   } catch (err: any) {
-    console.error('Token verification error:', err);
-    return res.status(401).json({ error: 'Unauthorized: Invalid ID token' });
+    console.error('Session verification error:', err);
+    return res.status(401).json({ error: 'Unauthorized: Session verification failed' });
   }
 }
 
@@ -227,7 +223,376 @@ async function deductUserCredits(uid: string, creditCost: number) {
 
 // 1. Health Probe
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ status: 'ok', time: new Date().toISOString(), database: 'vps_local_db' });
+});
+
+// ---------------------------------------------------------------------------
+// AUTHENTICATION & SESSION ENDPOINTS (VPS LOCAL DATABASE)
+// ---------------------------------------------------------------------------
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, displayName } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const usersCol = db.collection('users');
+    const existing = await usersCol.where('email', '==', cleanEmail).get();
+    if (!existing.empty) {
+      return res.status(400).json({ error: 'An account with this email already exists.' });
+    }
+
+    const userId = crypto.randomUUID();
+    const passwordHash = db.hashPassword(password);
+    const name = displayName?.trim() || cleanEmail.split('@')[0] || 'Aurum Seeker';
+    const photoURL = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+
+    const newUser = {
+      id: userId,
+      email: cleanEmail,
+      passwordHash,
+      displayName: name,
+      photoURL,
+      planId: 'plan_free',
+      planName: 'Free (Spark)',
+      queriesCount: 0,
+      topupCredits: 0,
+      planExpiresAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await usersCol.doc(userId).set(newUser);
+    const token = db.createSessionToken(userId, cleanEmail);
+
+    const { passwordHash: _, ...publicUser } = newUser;
+    res.json({ token, user: publicUser });
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Registration failed: ' + err.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const usersCol = db.collection('users');
+    const existing = await usersCol.where('email', '==', cleanEmail).get();
+
+    if (existing.empty) {
+      return res.status(401).json({ error: 'No account associated with this email.' });
+    }
+
+    const userDoc = existing.docs[0];
+    const userData = userDoc.data();
+
+    const isMatch = db.verifyPassword(password, userData.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Incorrect email or password.' });
+    }
+
+    const token = db.createSessionToken(userData.id, cleanEmail);
+    const { passwordHash: _, ...publicUser } = userData;
+    res.json({ token, user: publicUser });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed: ' + err.message });
+  }
+});
+
+app.get('/api/auth/me', authenticateUser, async (req: any, res) => {
+  try {
+    const userDoc = await db.collection('users').doc(req.user.uid).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User profile not found.' });
+    }
+    const userData = userDoc.data();
+    const { passwordHash: _, ...publicUser } = userData;
+    res.json({ user: publicUser });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve profile: ' + err.message });
+  }
+});
+
+app.post('/api/auth/update-profile', authenticateUser, async (req: any, res) => {
+  try {
+    const { displayName, photoURL } = req.body;
+    const userDoc = await db.collection('users').doc(req.user.uid).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const updates: any = { updatedAt: new Date().toISOString() };
+    if (displayName !== undefined) updates.displayName = displayName.trim();
+    if (photoURL !== undefined) updates.photoURL = photoURL;
+
+    await db.collection('users').doc(req.user.uid).update(updates);
+    const updated = await db.collection('users').doc(req.user.uid).get();
+    const { passwordHash: _, ...publicUser } = updated.data();
+    res.json({ user: publicUser });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Profile update failed: ' + err.message });
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split('Bearer ')[1].trim();
+    db.removeSession(token);
+  }
+  res.json({ success: true });
+});
+
+// ---------------------------------------------------------------------------
+// DATA STORAGE & SYNC ENDPOINTS (VPS LOCAL DATABASE)
+// ---------------------------------------------------------------------------
+app.get('/api/user/profile', authenticateUser, async (req: any, res) => {
+  try {
+    const userDoc = await db.collection('users').doc(req.user.uid).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    const { passwordHash: _, ...userData } = userDoc.data();
+    res.json(userData);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/user/profile', authenticateUser, async (req: any, res) => {
+  try {
+    const allowed = ['displayName', 'photoURL', 'planId', 'planName', 'planExpiresAt', 'queriesCount', 'topupCredits', 'lastResetDate'];
+    const payload: any = { updatedAt: new Date().toISOString() };
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        payload[key] = req.body[key];
+      }
+    }
+    await db.collection('users').doc(req.user.uid).update(payload);
+    const updated = await db.collection('users').doc(req.user.uid).get();
+    const { passwordHash: _, ...userData } = updated.data();
+    res.json(userData);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/user/chats', authenticateUser, async (req: any, res) => {
+  try {
+    const snap = await db.collection('chats').where('userId', '==', req.user.uid).orderBy('updatedAt', 'desc').get();
+    const chats = snap.docs.map(d => d.data());
+    res.json(chats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/user/chats', authenticateUser, async (req: any, res) => {
+  try {
+    const chat = req.body;
+    if (!chat || !chat.id) {
+      return res.status(400).json({ error: 'Chat payload with id is required.' });
+    }
+    const chatData = {
+      ...chat,
+      userId: req.user.uid,
+      updatedAt: chat.updatedAt || new Date().toISOString()
+    };
+    await db.collection('chats').doc(chat.id).set(chatData);
+    res.json({ success: true, chat: chatData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/user/chats/:id', authenticateUser, async (req: any, res) => {
+  try {
+    const chatId = req.params.id;
+    await db.collection('chats').doc(chatId).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/user/sites', authenticateUser, async (req: any, res) => {
+  try {
+    const snap = await db.collection('sites').where('userId', '==', req.user.uid).orderBy('createdAt', 'desc').get();
+    const sites = snap.docs.map(d => d.data());
+    res.json(sites);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/plans', async (req, res) => {
+  try {
+    const snap = await db.collection('plans').get();
+    const plans = snap.docs.map(d => d.data());
+    res.json(plans);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/plans', authenticateUser, async (req: any, res) => {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: 'Admin permission required.' });
+  }
+  try {
+    const plan = req.body;
+    if (!plan || !plan.id) {
+      return res.status(400).json({ error: 'Plan id is required.' });
+    }
+    await db.collection('plans').doc(plan.id).set({
+      ...plan,
+      updatedAt: new Date().toISOString()
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/plans/:id', authenticateUser, async (req: any, res) => {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: 'Admin permission required.' });
+  }
+  try {
+    await db.collection('plans').doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/coupons', async (req, res) => {
+  try {
+    const snap = await db.collection('coupons').get();
+    const coupons = snap.docs.map(d => d.data());
+    res.json(coupons);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/coupons', authenticateUser, async (req: any, res) => {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: 'Admin permission required.' });
+  }
+  try {
+    const coupon = req.body;
+    if (!coupon || !coupon.code) {
+      return res.status(400).json({ error: 'Coupon code is required.' });
+    }
+    await db.collection('coupons').doc(coupon.code.toUpperCase()).set({
+      ...coupon,
+      code: coupon.code.toUpperCase()
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/coupons/:code', authenticateUser, async (req: any, res) => {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: 'Admin permission required.' });
+  }
+  try {
+    await db.collection('coupons').doc(req.params.code.toUpperCase()).delete();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/checkout/activate', authenticateUser, async (req: any, res) => {
+  try {
+    const { plan, couponCode, finalPrice } = req.body;
+    if (!plan || !plan.id) {
+      return res.status(400).json({ error: 'Plan details required.' });
+    }
+
+    const userId = req.user.uid;
+    const userRef = db.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() || {};
+    const isTopup = plan.id.startsWith('topup_');
+
+    if (isTopup) {
+      let creditsToIncrement = 100;
+      if (plan.id === 'topup_power') creditsToIncrement = 500;
+      if (plan.id === 'topup_pro') creditsToIncrement = 1500;
+
+      await userRef.set({
+        topupCredits: (userData.topupCredits || 0) + creditsToIncrement,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } else {
+      await userRef.set({
+        planId: plan.id,
+        planName: plan.name,
+        queriesCount: 0,
+        planExpiresAt: plan.id === 'plan_free' ? null : (Date.now() + 30 * 24 * 60 * 60 * 1000),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+
+    // Record receipt transaction
+    const txId = `tx_order_${Date.now()}_${Math.random().toString(36).substring(4, 9)}`;
+    await db.collection('transactions').doc(txId).set({
+      id: txId,
+      userId: userId,
+      userEmail: req.user.email,
+      planId: plan.id,
+      planName: plan.name,
+      amount: finalPrice || 0,
+      status: 'paid',
+      type: isTopup ? 'topup_order' : 'subscription_order',
+      couponUsed: (couponCode || 'none').trim().toUpperCase(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    const updatedSnap = await userRef.get();
+    res.json({ success: true, profile: updatedSnap.data() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users/:id', authenticateUser, async (req: any, res) => {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: 'Admin permission required.' });
+  }
+  try {
+    const { planId, planName, queriesCount, topupCredits } = req.body;
+    const userId = req.params.id;
+    const userRef = db.collection('users').doc(userId);
+    await userRef.set({
+      planId: planId,
+      planName: planName || 'Free',
+      queriesCount: Number(queriesCount) || 0,
+      topupCredits: Number(topupCredits) || 0,
+      planExpiresAt: planId === 'plan_free' ? null : (Date.now() + 30 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 1.5. Image Proxy - Uses NVIDIA NIM FLUX visual models securely with credentials stored on the server
@@ -471,7 +836,7 @@ app.get('/api/image-proxy', async (req, res) => {
 // Temporary Debug endpoint to run live checks
 app.get('/api/debug', async (req, res) => {
   const reports: any = {};
-  reports.firebaseConfig = firebaseConfig;
+  reports.database = 'local_json_db';
   try {
     const snap = await db.collection('settings').doc('system').get();
     reports.firestoreRead = snap.exists ? snap.data() : 'Document does not exist';
