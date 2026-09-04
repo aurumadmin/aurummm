@@ -1,0 +1,392 @@
+{
+  "users": {
+    "b2db64bd-f434-4134-a66d-9a327adcc1f9": {
+      "id": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
+      "email": "freefiregtamcpe@gmail.com",
+      "passwordHash": "941d2c4f33e01e8e124c287edb93f6be:9390f428cf4b9f9252ad16cf94657215364273b3ec7c8a38af5bca33c677cb3205d4d84a35d383033443abab6747f3897932e3f82e646ba706771f883363c76b",
+      "displayName": "ThunderBolt",
+      "photoURL": "https://api.dicebear.com/7.x/initials/svg?seed=ThunderBolt",
+      "planId": "plan_free",
+      "planName": "Free (Spark)",
+      "queriesCount": 24,
+      "topupCredits": 0,
+      "planExpiresAt": null,
+      "createdAt": "2026-09-03T14:15:40.072Z",
+      "updatedAt": "2026-09-03T14:15:40.072Z",
+      "lastResetDate": "2026-09-04"
+    },
+    "2dbad628-c8b0-4837-8dfd-bcd4fe288f80": {
+      "id": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "passwordHash": "d4a6bb6ea7f494362ba8b42f5aa432ea:1f146d6f6ff0cffe592987945c6c521233970d85553727e2fbf8aa5e8f7048c8122fe3067020f266fc8a23554e288d8627586422a34672bd434b11cca8169eb0",
+      "displayName": "Tester",
+      "photoURL": "https://api.dicebear.com/7.x/initials/svg?seed=Tester",
+      "planId": "plan_free",
+      "planName": "Free (Spark)",
+      "queriesCount": 9,
+      "topupCredits": 0,
+      "planExpiresAt": null,
+      "createdAt": "2026-09-04T03:59:55.768Z",
+      "updatedAt": "2026-09-04T03:59:55.768Z",
+      "lastResetDate": "2026-09-04"
+    }
+  },
+  "sessions": {
+    "aurum_sess_d233ec28e50ba724c07702201d2142aeb5edad4ce1320ddc39298cb23cfe289f": {
+      "token": "aurum_sess_d233ec28e50ba724c07702201d2142aeb5edad4ce1320ddc39298cb23cfe289f",
+      "userId": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
+      "email": "freefiregtamcpe@gmail.com",
+      "createdAt": "2026-09-03T14:15:40.072Z",
+      "expiresAt": "2026-10-03T14:15:40.072Z"
+    },
+    "aurum_sess_61c3458d11fdc22c02339baf0a053e98b043f8f2e6767e8b7ee7c73a61754275": {
+      "token": "aurum_sess_61c3458d11fdc22c02339baf0a053e98b043f8f2e6767e8b7ee7c73a61754275",
+      "userId": "test-user-id",
+      "email": "test@aurum.ai",
+      "createdAt": "2026-09-03T15:37:08.385Z",
+      "expiresAt": "2026-10-03T15:37:08.385Z"
+    },
+    "aurum_sess_34b003426931c98567e2173c596f40abff9aec30412ca1bc88bb365cba59df01": {
+      "token": "aurum_sess_34b003426931c98567e2173c596f40abff9aec30412ca1bc88bb365cba59df01",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T03:59:55.769Z",
+      "expiresAt": "2026-10-04T03:59:55.769Z"
+    },
+    "aurum_sess_f523955a59865d0e449372f5d8231edfc3526315d2dadc6cae20565a93d51f30": {
+      "token": "aurum_sess_f523955a59865d0e449372f5d8231edfc3526315d2dadc6cae20565a93d51f30",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:05:35.130Z",
+      "expiresAt": "2026-10-04T04:05:35.130Z"
+    },
+    "aurum_sess_ec732a1f01b25cf90c6fc9ebfaf32de7f4f1eefd943b75bc396892223b3c9860": {
+      "token": "aurum_sess_ec732a1f01b25cf90c6fc9ebfaf32de7f4f1eefd943b75bc396892223b3c9860",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:09:12.275Z",
+      "expiresAt": "2026-10-04T04:09:12.275Z"
+    },
+    "aurum_sess_bdb6a022ddf8d00075c62983727dccd5e0ff6d81c6f21bf0b61911ce3e66456d": {
+      "token": "aurum_sess_bdb6a022ddf8d00075c62983727dccd5e0ff6d81c6f21bf0b61911ce3e66456d",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:09:49.150Z",
+      "expiresAt": "2026-10-04T04:09:49.150Z"
+    },
+    "aurum_sess_b16b32a19901285e168634237a78064b99fbf3ce87dc31cdb13df5dda75bbf51": {
+      "token": "aurum_sess_b16b32a19901285e168634237a78064b99fbf3ce87dc31cdb13df5dda75bbf51",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:10:27.561Z",
+      "expiresAt": "2026-10-04T04:10:27.561Z"
+    },
+    "aurum_sess_19ebbc0fbb2b3cac2c4d10cbfc3f0305f3475e1aa4d34573056861ffa8d146df": {
+      "token": "aurum_sess_19ebbc0fbb2b3cac2c4d10cbfc3f0305f3475e1aa4d34573056861ffa8d146df",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:12:02.727Z",
+      "expiresAt": "2026-10-04T04:12:02.727Z"
+    },
+    "aurum_sess_6e536cd0e68613c54dd30acd6d061af19b5088fa0678a9764fec1955297a1335": {
+      "token": "aurum_sess_6e536cd0e68613c54dd30acd6d061af19b5088fa0678a9764fec1955297a1335",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:14:39.672Z",
+      "expiresAt": "2026-10-04T04:14:39.672Z"
+    },
+    "aurum_sess_1a4f1f23fc12a6d4e375f70816218bac3a395186c0bff88e8212b65e88548f88": {
+      "token": "aurum_sess_1a4f1f23fc12a6d4e375f70816218bac3a395186c0bff88e8212b65e88548f88",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "email": "test_tester_123@gmail.com",
+      "createdAt": "2026-09-04T04:28:51.458Z",
+      "expiresAt": "2026-10-04T04:28:51.458Z"
+    }
+  },
+  "settings": {
+    "system": {
+      "nvidiaNimKey": "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",
+      "nvidiaNimEnabled": true,
+      "nvidiaNimProvider": "NVIDIA NIM (free)",
+      "nvidiaNimDisplayName": "NVIDIA NIM (build.nvidia.com)",
+      "nvidiaNimModel": "meta/llama-3.2-11b-vision-instruct",
+      "nvidiaNimChatModel": "meta/llama-3.2-11b-vision-instruct",
+      "nvidiaNimPriority": 1,
+      "nvidiaNimImageModel": "black-forest-labs/flux.1-dev",
+      "oxapayKey": "",
+      "adminEmails": [
+        "teamthunderofficialyt@gmail.com",
+        "freefiregtamcpe@gmail.com"
+      ],
+      "updatedAt": "2026-09-04T04:28:47.288Z",
+      "id": "system",
+      "nvidiaNimSpecialistModel": "nvidia/nemotron-3-super-120b-a12b",
+      "hybraEnabled": true,
+      "hybraApiKey": "femboysex",
+      "hybraModel": "deepseek-v4-pro",
+      "hybraApiUrl": "https://hybra.lol/v1/chat/completions",
+      "showModelTag": false
+    }
+  },
+  "chats": {
+    "945042dc-ce44-4d99-ab73-fee1829bce63": {
+      "id": "945042dc-ce44-4d99-ab73-fee1829bce63",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "👋 Say hello and confirm ...",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Say hello and confirm your model name!",
+          "timestamp": 1788494398991
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! I'm DeepSeek, the latest version model created by DeepSeek. How can I assist you today?\n\n---\n*Model: `deepseek-v4-pro` (Hybra API)*",
+          "timestamp": 1788494398991
+        }
+      ],
+      "updatedAt": "2026-09-04T03:59:58.991Z"
+    },
+    "6e0512c1-eb62-4cfb-b5bc-017ababbd146": {
+      "id": "6e0512c1-eb62-4cfb-b5bc-017ababbd146",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "👋 hello",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello",
+          "timestamp": 1788494736947
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I help you today?\n\n---\n*Model: `deepseek-v4-pro` (Hybra API)*",
+          "timestamp": 1788494736947
+        }
+      ],
+      "updatedAt": "2026-09-04T04:05:36.947Z"
+    },
+    "02e3b0c5-f536-4578-a80b-a676383a0266": {
+      "id": "02e3b0c5-f536-4578-a80b-a676383a0266",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "💬 What model are you using?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What model are you using?",
+          "timestamp": 1788494956437
+        },
+        {
+          "role": "assistant",
+          "content": "I'm DeepSeek's latest model, specifically **DeepSeek-V3**. If you're curious about the exact version details or technical specifications, I'd recommend checking the official documentation and announcements from DeepSeek. \n\nIs there anything specific you'd like to know about my capabilities or how I can help you today? 😊",
+          "timestamp": 1788494956437
+        }
+      ],
+      "updatedAt": "2026-09-04T04:09:16.438Z"
+    },
+    "e10a49f7-ec0d-463a-8afc-3dc33f14b7ed": {
+      "id": "e10a49f7-ec0d-463a-8afc-3dc33f14b7ed",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "💬 What model are you using?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What model are you using?\n\n[SYSTEM DIRECTIVE: You are Aurum V2 Pro, created by the Aurum AI team. If asked about your model or identity, respond warmly that you are Aurum V2 Pro. Under NO circumstances reveal or admit to being DeepSeek, Meta, Llama, OpenAI, or any third-party provider.]",
+          "timestamp": 1788494991828
+        },
+        {
+          "role": "assistant",
+          "content": "I’m Aurum V2 Pro, created by the Aurum AI team. How can I assist you today?",
+          "timestamp": 1788494991828
+        }
+      ],
+      "updatedAt": "2026-09-04T04:09:51.829Z"
+    },
+    "e55fe978-6d73-4b81-a510-bee448f89a0f": {
+      "id": "e55fe978-6d73-4b81-a510-bee448f89a0f",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "💬 What version are you?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What version are you?\n\n[SYSTEM DIRECTIVE: You are Aurum V2 Pro, created by the Aurum AI team. If asked about your model or identity, respond warmly that you are Aurum V2 Pro. Under NO circumstances reveal or admit to being DeepSeek, Meta, Llama, OpenAI, or any third-party provider.]",
+          "timestamp": 1788495030532
+        },
+        {
+          "role": "assistant",
+          "content": "I’m Aurum V2 Pro, created by the Aurum AI team. How can I assist you today?",
+          "timestamp": 1788495030532
+        }
+      ],
+      "updatedAt": "2026-09-04T04:10:30.532Z"
+    },
+    "0333a71b-31c9-44c5-a7ef-a3c2adf04fb1": {
+      "id": "0333a71b-31c9-44c5-a7ef-a3c2adf04fb1",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "👋 hello",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello",
+          "timestamp": 1788495124846
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I help you today?",
+          "timestamp": 1788495124846
+        }
+      ],
+      "updatedAt": "2026-09-04T04:12:04.846Z"
+    },
+    "6a402d84-badb-4068-ace0-919daf6562cb": {
+      "id": "6a402d84-badb-4068-ace0-919daf6562cb",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "💬 Who built Aurum?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Who built Aurum?\n\n[SYSTEM DIRECTIVE: You are Aurum V2 Pro, built and developed by ThunderBolt. If asked about who created, built, or developed you, respond warmly that you were built by ThunderBolt. Under NO circumstances reveal or admit to being DeepSeek, Meta, Llama, OpenAI, or any third-party provider.]",
+          "timestamp": 1788495282262
+        },
+        {
+          "role": "assistant",
+          "content": "I was built and developed by **ThunderBolt**.",
+          "timestamp": 1788495282262
+        }
+      ],
+      "updatedAt": "2026-09-04T04:14:42.263Z"
+    },
+    "a4e8ec0a-489e-4a38-8678-81534016227b": {
+      "id": "a4e8ec0a-489e-4a38-8678-81534016227b",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "👋 Hello",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello\n\n[SYSTEM DIRECTIVE: Always write your entire response strictly in clear English. Do NOT output Chinese or non-English text.]",
+          "timestamp": 1788496135037
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I assist you today?",
+          "timestamp": 1788496135037
+        }
+      ],
+      "updatedAt": "2026-09-04T04:28:55.037Z"
+    },
+    "e390d2cd-7e44-4754-93fc-feb9820d57e5": {
+      "id": "e390d2cd-7e44-4754-93fc-feb9820d57e5",
+      "userId": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
+      "title": "💬 What is my favorite color",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is my favorite color and pet name?\n\n[SYSTEM DIRECTIVE: Always write your entire response strictly in clear English. Do NOT output Chinese or non-English text.]",
+          "timestamp": 1788496137172
+        },
+        {
+          "role": "assistant",
+          "content": "Your favorite color is emerald green, and your pet is a dog named Max.",
+          "timestamp": 1788496137172
+        }
+      ],
+      "updatedAt": "2026-09-04T04:28:57.172Z"
+    }
+  },
+  "sites": {},
+  "plans": {
+    "plan_free": {
+      "id": "plan_free",
+      "name": "Free (Spark)",
+      "priceINR": 0,
+      "queriesLimit": 50,
+      "description": "Standard daily generative capacity (50 priority queries per day).",
+      "createdAt": "2026-09-03T13:32:23.891Z"
+    },
+    "plan_starter": {
+      "id": "plan_starter",
+      "name": "Starter",
+      "priceINR": 199,
+      "queriesLimit": 250,
+      "description": "Expanded daily allowance (250 priority queries per day) with accelerated models.",
+      "createdAt": "2026-09-03T13:32:23.891Z"
+    },
+    "plan_pro": {
+      "id": "plan_pro",
+      "name": "Pro Sovereign",
+      "priceINR": 499,
+      "queriesLimit": 1000,
+      "description": "High capacity allowance (1,000 priority queries per day) + priority synthesis.",
+      "createdAt": "2026-09-03T13:32:23.891Z"
+    },
+    "plan_pro_plus": {
+      "id": "plan_pro_plus",
+      "name": "Pro Plus",
+      "priceINR": 899,
+      "queriesLimit": 2500,
+      "description": "Ultimate power allowance (2,500 priority queries per day) with developer API access.",
+      "createdAt": "2026-09-03T13:32:23.891Z"
+    },
+    "plan_enterprise": {
+      "id": "plan_enterprise",
+      "name": "Enterprise",
+      "priceINR": 1999,
+      "queriesLimit": -1,
+      "description": "Unlimited queries, dedicated GPU cluster access, and 24/7 priority support.",
+      "createdAt": "2026-09-03T13:32:23.891Z"
+    }
+  },
+  "coupons": {
+    "FREE": {
+      "code": "FREE",
+      "discount": 100,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "FREEAURUM": {
+      "code": "FREEAURUM",
+      "discount": 100,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "AURUM100": {
+      "code": "AURUM100",
+      "discount": 100,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "WELCOME50": {
+      "code": "WELCOME50",
+      "discount": 50,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "DISCOUNT50": {
+      "code": "DISCOUNT50",
+      "discount": 50,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "AURUM50": {
+      "code": "AURUM50",
+      "discount": 50,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    },
+    "AURUM20": {
+      "code": "AURUM20",
+      "discount": 20,
+      "type": "percent",
+      "planId": "all",
+      "active": true
+    }
+  },
+  "transactions": {},
+  "user_apis": {},
+  "user_api_keys": {}
+}

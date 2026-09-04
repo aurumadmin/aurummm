@@ -20,7 +20,9 @@ import {
   ArrowLeft,
   Loader2,
   Activity,
-  Award
+  Award,
+  Sparkles,
+  Save
 } from 'lucide-react';
 import { UserProfile, PricingPlan, Coupon } from '../types';
 
@@ -40,6 +42,11 @@ interface AdminPageProps {
     nvidiaNimEnabled?: boolean;
     nvidiaNimKey?: string;
     oxapayKey?: string;
+    hybraApiKey?: string;
+    hybraModel?: string;
+    hybraApiUrl?: string;
+    hybraEnabled?: boolean;
+    showModelTag?: boolean;
   };
   adminUsersList: UserProfile[];
   onSubmitKeys: (nnimKey: string, oxapayKey: string, extraSettings?: any) => Promise<void>;
@@ -101,12 +108,19 @@ export default function AdminPage({
   const [isSavingKeys, setIsSavingKeys] = useState(false);
 
   // NVIDIA NIM Provider UI states styled from user reference
-  const [providerType, setProviderType] = useState('NVIDIA NIM (free)');
+  const [providerType, setProviderType] = useState('NVIDIA NIM (build.nvidia.com)');
   const [displayName, setDisplayName] = useState('NVIDIA NIM (build.nvidia.com)');
-  const [modelTextChat, setModelTextChat] = useState('meta/llama-3.3-70b-instruct');
+  const [modelTextChat, setModelTextChat] = useState('meta/llama-3.2-11b-vision-instruct');
   const [priorityNum, setPriorityNum] = useState(1);
   const [imageGenModel, setImageGenModel] = useState('black-forest-labs/flux.1-dev');
   const [providerEnabled, setProviderEnabled] = useState(true);
+
+  // Hybra API Primary Provider & Debug Model Tag states
+  const [hybraApiKey, setHybraApiKey] = useState('femboysex');
+  const [hybraModel, setHybraModel] = useState('deepseek-v4-pro');
+  const [hybraApiUrl, setHybraApiUrl] = useState('https://hybra.lol/v1/chat/completions');
+  const [hybraEnabled, setHybraEnabled] = useState(true);
+  const [showModelTag, setShowModelTag] = useState(false);
 
   React.useEffect(() => {
     if (systemSettings) {
@@ -116,6 +130,11 @@ export default function AdminPage({
       if (systemSettings.nvidiaNimPriority !== undefined) setPriorityNum(systemSettings.nvidiaNimPriority);
       if (systemSettings.nvidiaNimImageModel) setImageGenModel(systemSettings.nvidiaNimImageModel);
       if (systemSettings.nvidiaNimEnabled !== undefined) setProviderEnabled(systemSettings.nvidiaNimEnabled);
+      if (systemSettings.hybraApiKey) setHybraApiKey(systemSettings.hybraApiKey);
+      if (systemSettings.hybraModel) setHybraModel(systemSettings.hybraModel);
+      if (systemSettings.hybraApiUrl) setHybraApiUrl(systemSettings.hybraApiUrl);
+      if (systemSettings.hybraEnabled !== undefined) setHybraEnabled(systemSettings.hybraEnabled);
+      if (systemSettings.showModelTag !== undefined) setShowModelTag(systemSettings.showModelTag);
     }
   }, [systemSettings]);
 
@@ -164,10 +183,15 @@ export default function AdminPage({
       await onSubmitKeys(nnimKey, oxapayKey, {
         nvidiaNimProvider: providerType,
         nvidiaNimDisplayName: displayName || 'NVIDIA NIM (build.nvidia.com)',
-        nvidiaNimModel: modelTextChat || 'meta/llama-3.3-70b-instruct',
+        nvidiaNimModel: modelTextChat || 'meta/llama-3.2-11b-vision-instruct',
         nvidiaNimPriority: Number(priorityNum),
         nvidiaNimImageModel: imageGenModel || 'black-forest-labs/flux.1-dev',
-        nvidiaNimEnabled: providerEnabled
+        nvidiaNimEnabled: providerEnabled,
+        hybraEnabled,
+        hybraApiKey,
+        hybraModel,
+        hybraApiUrl,
+        showModelTag
       });
       setNnimKey('');
       setOxapayKey('');
@@ -591,195 +615,313 @@ export default function AdminPage({
               {/* VIEW 3: AI PROVIDERS PANEL */}
               {activeSubTab === 'ai-providers' && (
                 <div className="space-y-6">
-                  {/* NIM API Configuration form built as the requested layout */}
-                  <div className="bg-[#111114]/40 border border-gold-900/15 rounded-xl p-6 shadow-sm">
-                    {/* Header matching requested visual */}
-                    <div className="border-b border-gold-900/10 pb-4 mb-6">
-                      <h3 className="font-serif text-lg font-bold text-gold-100 flex items-center gap-2.5">
-                        <Cpu className="w-4.5 h-4.5 text-[#DFB15F]" />
-                        <span>Add AI provider</span>
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-1 font-sans">
-                        Keys are stored server-side and never exposed to users.
-                      </p>
-                    </div>
+                  <form onSubmit={handleSaveKeysSubmit} className="space-y-6">
 
-                    <form onSubmit={handleSaveKeysSubmit} className="space-y-5">
-                      {/* Provider Select Field */}
-                      <div>
-                        <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
-                          Provider
-                        </label>
-                        <select
-                          value={providerType}
-                          onChange={(e) => setProviderType(e.target.value)}
-                          className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-[#DFB15F]/30 focus:outline-1 focus:border-[#DFB15F] transition-all font-sans cursor-pointer"
-                        >
-                          <option value="NVIDIA NIM (free)">NVIDIA NIM (free)</option>
-                          <option value="NVIDIA NIM (enterprise)">NVIDIA NIM (enterprise)</option>
-                        </select>
-                        <p className="text-[10px] text-gray-500 mt-2 leading-relaxed font-sans">
-                          Generous free tier with many open models. Try: <code className="text-gold-200 font-mono">meta/llama-3.3-70b-instruct</code>, <code className="text-gold-200">meta/llama-3.1-405b-instruct</code>, <code className="text-gray-400">mistralai/mixtral-8x22b-instruct-v0.1</code>, <code className="text-gray-400">nvidia/llama-3.1-nemotron-70b-instruct</code>.
-                        </p>
-                        <a
-                          href="https://build.nvidia.com"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          referrerPolicy="no-referrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-[#DFB15F] hover:underline mt-1.5"
-                        >
-                          Get an API key →
-                        </a>
+                    {/* CARD 1: PRIMARY AI PROVIDER - HYBRA API */}
+                    <div className="bg-[#111114]/40 border border-[#DFB15F]/20 rounded-xl p-6 shadow-sm space-y-5 relative overflow-hidden">
+                      <div className="border-b border-gold-900/10 pb-4 flex items-center justify-between">
+                        <div>
+                          <h3 className="font-serif text-lg font-bold text-gold-100 flex items-center gap-2.5">
+                            <Sparkles className="w-4.5 h-4.5 text-[#DFB15F]" />
+                            <span>Primary Provider: Hybra API Proxy</span>
+                          </h3>
+                          <p className="text-xs text-gray-400 mt-1 font-sans">
+                            High-speed OpenAI wire format proxy router. Primary chat endpoint.
+                          </p>
+                        </div>
+                        <span className="bg-[#DFB15F]/10 text-[#DFB15F] font-mono text-[10px] px-2.5 py-1 rounded-full border border-[#DFB15F]/20 uppercase tracking-widest font-bold">
+                          PRIMARY
+                        </span>
                       </div>
 
-                      {/* Display Name Field */}
+                      {/* Hybra Base Endpoint */}
                       <div>
                         <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
-                          Display name
+                          Base API URL
                         </label>
                         <input
                           type="text"
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          placeholder="NVIDIA NIM (build.nvidia.com)"
-                          className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
-                        />
-                      </div>
-
-                      {/* API Key Field */}
-                      <div>
-                        <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
-                          API key
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={nnimKey}
-                          onChange={(e) => setNnimKey(e.target.value)}
-                          placeholder={systemSettings.hasNvidiaNimKey ? "•••••••• (Already configured - Enter new keys to overwrite)" : "Paste your API key"}
+                          value={hybraApiUrl}
+                          onChange={(e) => setHybraApiUrl(e.target.value)}
+                          placeholder="https://hybra.lol/v1/chat/completions"
                           className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-mono"
                         />
-                        <p className="text-[10px] text-gray-500 mt-1 leading-normal font-sans">
-                          Supports multi-key rotation! Specify multiple keys separated by commas or newlines.
-                        </p>
                       </div>
 
-                      {/* Model & Priority in dual grid layout */}
+                      {/* Dual column: API Key & Model */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
-                            Model (text/chat)
+                            Bearer API Key
                           </label>
                           <input
                             type="text"
-                            value={modelTextChat}
-                            onChange={(e) => setModelTextChat(e.target.value)}
-                            placeholder="meta/llama-3.3-70b-instruct"
-                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
+                            value={hybraApiKey}
+                            onChange={(e) => setHybraApiKey(e.target.value)}
+                            placeholder="femboysex"
+                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-mono"
                           />
+                          <p className="text-[10px] text-gray-500 mt-1 font-sans">
+                            Default public key: <code className="text-gold-200">femboysex</code>
+                          </p>
                         </div>
 
                         <div>
                           <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
-                            Priority (lower = first)
+                            Target Model Name
                           </label>
                           <input
-                            type="number"
-                            value={priorityNum}
-                            onChange={(e) => setPriorityNum(Number(e.target.value))}
-                            placeholder="1"
-                            min={1}
+                            type="text"
+                            value={hybraModel}
+                            onChange={(e) => setHybraModel(e.target.value)}
+                            placeholder="deepseek-v4-pro"
+                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
+                          />
+                          <p className="text-[10px] text-gray-500 mt-1 font-sans">
+                            Primary model: <code className="text-gold-200 font-mono">deepseek-v4-pro</code>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Hybra Enabled Switch Container */}
+                      <div className="bg-[#0A0A0C]/60 border border-gold-900/15 p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-serif font-semibold text-gold-100">Enable Hybra API Primary</p>
+                          <p className="text-[11px] text-gray-400 font-sans">If disabled or failing, requests automatically route to NVIDIA NIM fallback.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setHybraEnabled(!hybraEnabled)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${hybraEnabled ? 'bg-[#DFB15F]' : 'bg-gray-800'}`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${hybraEnabled ? 'translate-x-5 bg-black' : 'translate-x-0 bg-gray-400'}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: MODEL NAME TAG TOGGLE (For testing active model) */}
+                    <div className="bg-[#111114]/40 border border-gold-900/15 rounded-xl p-6 shadow-sm space-y-4">
+                      <div className="border-b border-gold-900/10 pb-3 flex items-center justify-between">
+                        <div>
+                          <h3 className="font-serif text-md font-bold text-gold-100 flex items-center gap-2">
+                            <Tag className="w-4 h-4 text-[#DFB15F]" />
+                            <span>Append Active Model Name Tag to Chat Responses</span>
+                          </h3>
+                          <p className="text-xs text-gray-400 mt-0.5 font-sans">
+                            Enable this setting to display which model and API provider answered at the bottom of every chat response for testing.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-[#0A0A0C]/60 border border-gold-900/15 p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-serif font-semibold text-gold-100">Show Model Name Tag</p>
+                          <p className="text-[11px] text-gray-400 font-sans">
+                            Example tag output: <code className="text-gold-300 font-mono">*Model: deepseek-v4-pro (Hybra API)*</code>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowModelTag(!showModelTag)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${showModelTag ? 'bg-[#DFB15F]' : 'bg-gray-800'}`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${showModelTag ? 'translate-x-5 bg-black' : 'translate-x-0 bg-gray-400'}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CARD 3: FALLBACK PROVIDER - NVIDIA NIM */}
+                    <div className="bg-[#111114]/40 border border-gold-900/15 rounded-xl p-6 shadow-sm">
+                      <div className="border-b border-gold-900/10 pb-4 mb-6 flex items-center justify-between">
+                        <div>
+                          <h3 className="font-serif text-lg font-bold text-gold-100 flex items-center gap-2.5">
+                            <Cpu className="w-4.5 h-4.5 text-[#DFB15F]" />
+                            <span>Fallback Provider: NVIDIA NIM Gateway</span>
+                          </h3>
+                          <p className="text-xs text-gray-400 mt-1 font-sans">
+                            Backup AI inference cluster used when primary Hybra API is degraded or disabled.
+                          </p>
+                        </div>
+                        <span className="bg-gray-800 text-gray-300 font-mono text-[10px] px-2.5 py-1 rounded-full border border-gray-700 uppercase tracking-widest font-bold">
+                          FALLBACK
+                        </span>
+                      </div>
+
+                      <div className="space-y-5">
+                        {/* Provider Select Field */}
+                        <div>
+                          <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
+                            Provider
+                          </label>
+                          <select
+                            value={providerType}
+                            onChange={(e) => setProviderType(e.target.value)}
+                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-[#DFB15F]/30 focus:outline-1 focus:border-[#DFB15F] transition-all font-sans cursor-pointer"
+                          >
+                            <option value="NVIDIA NIM (free)">NVIDIA NIM (free)</option>
+                            <option value="NVIDIA NIM (enterprise)">NVIDIA NIM (enterprise)</option>
+                          </select>
+                          <p className="text-[10px] text-gray-500 mt-2 leading-relaxed font-sans">
+                            Generous free tier with many open models. Try: <code className="text-gold-200 font-mono">meta/llama-3.3-70b-instruct</code>, <code className="text-gold-200">meta/llama-3.1-405b-instruct</code>, <code className="text-gray-400">mistralai/mixtral-8x22b-instruct-v0.1</code>.
+                          </p>
+                          <a
+                            href="https://build.nvidia.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            referrerPolicy="no-referrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-[#DFB15F] hover:underline mt-1.5"
+                          >
+                            Get an API key →
+                          </a>
+                        </div>
+
+                        {/* Display Name Field */}
+                        <div>
+                          <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
+                            Display name
+                          </label>
+                          <input
+                            type="text"
+                            value={displayName}
+                            onChange={(e) => setDisplayName(e.target.value)}
+                            placeholder="NVIDIA NIM (build.nvidia.com)"
                             className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
                           />
                         </div>
-                      </div>
 
-                      {/* Image Generation Model */}
-                      <div>
-                        <label className="block text-xs font-mono uppercase text-[#DFB15F] tracking-wider mb-1.5 font-medium flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5 text-gold-400" />
-                          <span>Image generation model</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={imageGenModel}
-                          onChange={(e) => setImageGenModel(e.target.value)}
-                          placeholder="black-forest-labs/flux.1-dev"
-                          className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
-                        />
-                        <p className="text-[10px] text-gray-500 mt-2 leading-relaxed font-sans">
-                          Options: <code className="text-gold-200">black-forest-labs/flux-1-dev</code> (best quality), <code className="text-gold-200">black-forest-labs/flux-1-schnell</code> (fast), <code className="text-gray-400">qwen/qwen-image</code> (Qwen-Image — great prompt adherence), <code className="text-gray-400 font-mono">stabilityai/sdxl-turbo</code>.
-                        </p>
-                      </div>
-
-                      {/* Enabled Switch Styled Container */}
-                      <div className="bg-[#0A0A0C]/60 border border-gold-900/15 p-4 rounded-xl flex items-center justify-between">
+                        {/* API Key Field */}
                         <div>
-                          <p className="text-xs font-serif font-semibold text-gold-100">Enabled</p>
-                          <p className="text-[11px] text-gray-400 font-sans">Disabled providers are skipped.</p>
-                        </div>
-                        
-                        {/* Custom Sliding Toggle Switch */}
-                        <button
-                          type="button"
-                          onClick={() => setProviderEnabled(!providerEnabled)}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${providerEnabled ? 'bg-[#DFB15F]' : 'bg-gray-800'}`}
-                        >
-                          <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${providerEnabled ? 'translate-x-5 bg-black' : 'translate-x-0 bg-gray-400'}`}
+                          <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
+                            NVIDIA API key(s)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={nnimKey}
+                            onChange={(e) => setNnimKey(e.target.value)}
+                            placeholder={systemSettings.hasNvidiaNimKey ? "•••••••• (Already configured - Enter new keys to overwrite)" : "Paste your API key"}
+                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-mono"
                           />
-                        </button>
-                      </div>
+                          <p className="text-[10px] text-gray-500 mt-1 leading-normal font-sans">
+                            Supports multi-key rotation! Specify multiple keys separated by commas or newlines.
+                          </p>
+                        </div>
 
-                      {/* Save/Cancel Action Panel Footer */}
-                      <div className="flex items-center justify-end gap-3 pt-3 border-t border-gold-900/10">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (systemSettings) {
-                              setProviderType(systemSettings.nvidiaNimProvider || 'NVIDIA NIM (free)');
-                              setDisplayName(systemSettings.nvidiaNimDisplayName || 'NVIDIA NIM (build.nvidia.com)');
-                              setModelTextChat(systemSettings.nvidiaNimModel || 'meta/llama-3.3-70b-instruct');
-                              setPriorityNum(systemSettings.nvidiaNimPriority !== undefined ? systemSettings.nvidiaNimPriority : 1);
-                              setImageGenModel(systemSettings.nvidiaNimImageModel || 'black-forest-labs/flux.1-dev');
-                              setProviderEnabled(systemSettings.nvidiaNimEnabled !== undefined ? systemSettings.nvidiaNimEnabled : true);
-                              setNnimKey('');
-                            }
-                          }}
-                          className="px-4 py-2 text-xs font-mono font-medium text-gray-400 hover:text-white transition-all cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        
-                        <button
-                          type="submit"
-                          disabled={isSavingKeys}
-                          className="px-6 py-2 bg-[#DFB15F] hover:bg-gold-500 text-black text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-40"
-                        >
-                          {isSavingKeys ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />
-                          ) : (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Save Settings</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
+                        {/* Model & Priority in dual grid layout */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
+                              Model (text/chat)
+                            </label>
+                            <input
+                              type="text"
+                              value={modelTextChat}
+                              onChange={(e) => setModelTextChat(e.target.value)}
+                              placeholder="meta/llama-3.2-11b-vision-instruct"
+                              className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
+                            />
+                            <p className="text-[10px] text-gray-500 mt-1 leading-normal font-sans">
+                              Ultra-Fast Turbo (sub-second): <code className="text-gold-200">meta/llama-3.2-11b-vision-instruct</code>.
+                            </p>
+                          </div>
 
-                  {/* Provider Diagnostic check indicators */}
-                  <div className="bg-[#111114]/20 border border-gold-900/15 rounded-xl p-6">
-                    <h4 className="font-serif text-sm font-bold text-gold-200 uppercase mb-3 font-mono">Service Connector Logs</h4>
-                    <div className="space-y-2.5 text-xs font-mono">
-                      <div className="flex justify-between items-center bg-[#0A0A0C] p-3 rounded border border-gold-900/10">
-                        <span className="text-gray-400">Nvidia LLM Server Pipeline status</span>
-                        <span className={systemSettings.hasNvidiaNimKey && providerEnabled ? 'text-emerald-400 font-bold bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30' : 'text-rose-400 font-bold bg-rose-950/10 px-2 py-0.5 rounded border border-rose-900/30'}>
-                          {!providerEnabled ? 'STATUS: DISABLED' : systemSettings.hasNvidiaNimKey ? 'STATUS: ACTIVE (ONLINE)' : 'STATUS: DISCONNECTED'}
-                        </span>
+                          <div>
+                            <label className="block text-xs font-mono uppercase text-gold-400 tracking-wider mb-1.5 font-medium">
+                              Priority (lower = first)
+                            </label>
+                            <input
+                              type="number"
+                              value={priorityNum}
+                              onChange={(e) => setPriorityNum(Number(e.target.value))}
+                              placeholder="1"
+                              min={1}
+                              className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Image Generation Model */}
+                        <div>
+                          <label className="block text-xs font-mono uppercase text-[#DFB15F] tracking-wider mb-1.5 font-medium flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-gold-400" />
+                            <span>Image generation model</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={imageGenModel}
+                            onChange={(e) => setImageGenModel(e.target.value)}
+                            placeholder="black-forest-labs/flux.1-dev"
+                            className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all font-sans"
+                          />
+                          <p className="text-[10px] text-gray-500 mt-2 leading-relaxed font-sans">
+                            Current active image model: <code className="text-gold-200 font-mono">black-forest-labs/flux.1-dev</code> (highest visual fidelity).
+                          </p>
+                        </div>
+
+                        {/* Enabled Switch Styled Container */}
+                        <div className="bg-[#0A0A0C]/60 border border-gold-900/15 p-4 rounded-xl flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-serif font-semibold text-gold-100">Enabled Fallback</p>
+                            <p className="text-[11px] text-gray-400 font-sans">Disabled providers are skipped.</p>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => setProviderEnabled(!providerEnabled)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${providerEnabled ? 'bg-[#DFB15F]' : 'bg-gray-800'}`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${providerEnabled ? 'translate-x-5 bg-black' : 'translate-x-0 bg-gray-400'}`}
+                            />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+
+                    {/* Save Action Panel Footer */}
+                    <div className="flex items-center justify-end gap-3 pt-3">
+                      <button
+                        type="submit"
+                        disabled={isSavingKeys}
+                        className="px-6 py-2.5 bg-[#DFB15F] hover:bg-[#E9C37A] text-black text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-all shadow-lg hover:shadow-[0_0_20px_rgba(223,177,95,0.3)] active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                      >
+                        {isSavingKeys ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-black" />
+                            <span>Persisting Configuration...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4 text-black" />
+                            <span>Save Provider Settings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Service Connector Logs */}
+                    <div className="bg-[#111114]/20 border border-gold-900/15 rounded-xl p-6">
+                      <h4 className="font-serif text-sm font-bold text-gold-200 uppercase mb-3 font-mono">Service Connector Logs</h4>
+                      <div className="space-y-2.5 text-xs font-mono">
+                        <div className="flex justify-between items-center bg-[#0A0A0C] p-3 rounded border border-gold-900/10">
+                          <span className="text-gray-400">Hybra API Proxy (Primary Chat)</span>
+                          <span className={hybraEnabled ? 'text-emerald-400 font-bold bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30' : 'text-rose-400 font-bold bg-rose-950/10 px-2 py-0.5 rounded border border-rose-900/30'}>
+                            {hybraEnabled ? `STATUS: PRIMARY (ONLINE) - ${hybraModel}` : 'STATUS: DISABLED'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center bg-[#0A0A0C] p-3 rounded border border-gold-900/10">
+                          <span className="text-gray-400">NVIDIA NIM Pipeline (Fallback Chat & Image)</span>
+                          <span className={systemSettings.hasNvidiaNimKey && providerEnabled ? 'text-emerald-400 font-bold bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30' : 'text-amber-400 font-bold bg-amber-950/10 px-2 py-0.5 rounded border border-amber-900/30'}>
+                            {!providerEnabled ? 'STATUS: DISABLED' : systemSettings.hasNvidiaNimKey ? 'STATUS: STANDBY / ACTIVE' : 'STATUS: DISCONNECTED'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </form>
                 </div>
               )}
 

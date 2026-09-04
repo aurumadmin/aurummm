@@ -1,0 +1,23 @@
+{
+  "hybraApiUrl": "https://hybra.lol/v1/chat/completions",
+  "hybraApiKey": "femboysex",
+  "hybraEnabled": true,
+  "hybraModel": "deepseek-v4-pro",
+  "showModelTag": true,
+  "nvidiaNimKey": "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",
+  "nvidiaNimEnabled": true,
+  "nvidiaNimProvider": "NVIDIA NIM (free)",
+  "nvidiaNimDisplayName": "NVIDIA NIM (build.nvidia.com)",
+  "nvidiaNimModel": "meta/llama-3.2-11b-vision-instruct",
+  "nvidiaNimChatModel": "meta/llama-3.2-11b-vision-instruct",
+  "nvidiaNimSpecialistModel": "nvidia/nemotron-3-super-120b-a12b",
+  "nvidiaNimPriority": 1,
+  "nvidiaNimImageModel": "black-forest-labs/flux.1-dev",
+  "oxapayKey": "",
+  "adminEmails": [
+    "teamthunderofficialyt@gmail.com",
+    "freefiregtamcpe@gmail.com"
+  ],
+  "updatedAt": "2026-09-04T03:34:10.443Z",
+  "id": "system"
+}

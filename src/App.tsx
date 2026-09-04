@@ -483,7 +483,7 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatGenerating, setChatGenerating] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [chatMode, setChatMode] = useState<'default' | 'fast' | 'writing'>('default');
+  const [chatMode, setChatMode] = useState<string>('meta/llama-3.2-11b-vision-instruct');
   const [imageMode, setImageMode] = useState<boolean>(false);
   const [imageCount, setImageCount] = useState<number>(1);
   const [accountModalOpen, setAccountModalOpen] = useState<boolean>(false);
@@ -1480,7 +1480,7 @@ export default function App() {
       const timer1 = setTimeout(() => {
         setSiteEditStepsLog([
           { name: 'Analyzing Original Webpage', status: 'Analyzed html and elements successfully!', active: false, complete: true },
-          { name: 'Injecting Layout Code Revisions', status: 'Applying instructions via Llama-3.3-70b AI model...', active: true },
+          { name: 'Injecting Layout Code Revisions', status: 'Applying instructions via AI compiler engine...', active: true },
           { name: 'Updating Sandbox Live Previews', status: 'Pending compilation...', active: false }
         ]);
       }, 3000);
@@ -1832,7 +1832,7 @@ export default function App() {
             const msgs = [...prev.messages];
             const lastIdx = msgs.length - 1;
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content === '') {
-              msgs[lastIdx] = { ...msgs[lastIdx], content: '⚠️ DeepSeek / Aurum engine did not return a response. Please check connection or retry.' };
+              msgs[lastIdx] = { ...msgs[lastIdx], content: '⚠️ Aurum engine did not return a response. Please check your connection or retry.' };
             }
             return { ...prev, messages: msgs };
           });
@@ -2774,55 +2774,15 @@ export default function App() {
                   {/* Badge button: Create images & file attachments list */}
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      {/* Mode Level Selector Pills */}
-                      <div className="flex items-center gap-0.5 p-0.5 bg-black/60 border border-gold-900/20 rounded-full shadow-inner select-none">
-                        <button
-                          type="button"
-                          onClick={() => setChatMode('default')}
-                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
-                            chatMode === 'default'
-                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
-                              : 'text-gray-400 hover:text-gold-200'
-                          }`}
-                          title="Default Mode"
-                        >
-                          Default
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChatMode('fast')}
-                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
-                            chatMode === 'fast'
-                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
-                              : 'text-gray-400 hover:text-gold-200'
-                          }`}
-                          title="Fast Mode"
-                        >
-                          Fast
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChatMode('writing')}
-                          className={`px-3 py-0.5 text-[10px] font-mono rounded-full cursor-pointer transition-all ${
-                            chatMode === 'writing'
-                              ? 'bg-[#DFB15F] text-black font-bold shadow-sm'
-                              : 'text-gray-400 hover:text-gold-200'
-                          }`}
-                          title="Writing Mode"
-                        >
-                          Writing
-                        </button>
-                      </div>
-
                       <button
                         type="button"
                         onClick={() => setImageMode(!imageMode)}
-                        className={`px-3 py-1 text-[10px] font-mono rounded-full flex items-center gap-1.5 cursor-pointer shadow-sm select-none transition-all duration-300 border ${
+                        className={`px-3 py-1 text-[11px] font-mono rounded-full flex items-center gap-1.5 cursor-pointer shadow-sm select-none transition-all duration-300 border ${
                           imageMode 
                             ? 'bg-gold-500/20 border-[#DFB15F]/70 text-[#FCF8F2] font-semibold ring-1 ring-[#DFB15F]/35' 
                             : 'bg-gold-950/40 border-gold-900/20 hover:bg-gold-900/30 hover:border-[#DFB15F]/40 text-gold-300'
                         }`}
-                        title={imageMode ? "Deactivate Image model mode" : "Activate Image model mode"}
+                        title={imageMode ? "Deactivate Image Generation mode" : "Activate Image Generation mode"}
                       >
                         <Sparkles className={`w-3.5 h-3.5 ${imageMode ? 'text-[#DFB15F] animate-spin' : 'text-gold-400'}`} />
                         <span>{imageMode ? 'Image Mode Active' : 'Create images'}</span>

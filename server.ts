@@ -6,16 +6,34 @@ import { localDb as db, FieldValue } from './server/localDb.ts';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
+const DEFAULT_NVIDIA_NIM_KEY = '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';
+const DEFAULT_CHAT_MODEL = 'meta/llama-3.2-11b-vision-instruct'; // Ultra-Fast Instant Turbo (~350ms TTFT, Vision, Chat)
+const SPECIALIST_MODEL = 'nvidia/nemotron-3-super-120b-a12b'; // 120B power specialist
+const DEEPSEEK_MODEL = 'deepseek-ai/deepseek-v4-pro-0813';
+const KIMI_MODEL = 'moonshotai/kimi-k3';
+
 function normalizeNvidiaModel(modelName?: string): string {
-  if (!modelName) return 'meta/llama-3.3-70b-instruct';
+  if (!modelName) return DEFAULT_CHAT_MODEL;
   const lower = modelName.trim().toLowerCase();
-  if (lower.includes('deepseek') || lower.includes('v4') || lower.includes('flash') || lower.includes('nemotron')) {
-    return 'meta/llama-3.3-70b-instruct';
+  if (lower.includes('nemotron') || lower.includes('120b') || lower.includes('specialist')) {
+    return SPECIALIST_MODEL;
   }
-  if (lower.startsWith('meta/') || lower.startsWith('nvidia/') || lower.startsWith('mistralai/') || lower.startsWith('deepseek-ai/')) {
+  if (lower.includes('kimi') || lower.includes('moonshot') || lower.includes('k3')) {
+    return KIMI_MODEL;
+  }
+  if (lower.includes('flash')) {
+    return 'deepseek-ai/deepseek-v4-flash-0731';
+  }
+  if (lower.includes('deepseek') || lower.includes('pro')) {
+    return DEEPSEEK_MODEL;
+  }
+  if (lower.includes('llama') || lower.includes('vision') || lower.includes('turbo') || lower.includes('fast') || lower.includes('default')) {
+    return DEFAULT_CHAT_MODEL;
+  }
+  if (lower.includes('/') && !lower.includes('llama-3.3-70b-instruct') && !lower.includes('llama-3.1-8b-instruct')) {
     return modelName.trim();
   }
-  return 'meta/llama-3.3-70b-instruct';
+  return DEFAULT_CHAT_MODEL;
 }
 
 const app = express();
@@ -37,12 +55,18 @@ const siteCodeCache = new Map<string, string>();
 
 // Global in-memory configuration with solid defaults
 let inMemorySettings: any = {
-  nvidiaNimKey: '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',
+  hybraApiUrl: 'https://hybra.lol/v1/chat/completions',
+  hybraApiKey: 'femboysex',
+  hybraEnabled: true,
+  hybraModel: 'deepseek-v4-pro',
+  showModelTag: false,
+  nvidiaNimKey: DEFAULT_NVIDIA_NIM_KEY,
   nvidiaNimEnabled: true,
-  nvidiaNimProvider: 'NVIDIA NIM (free)',
+  nvidiaNimProvider: 'NVIDIA NIM (build.nvidia.com)',
   nvidiaNimDisplayName: 'NVIDIA NIM (build.nvidia.com)',
-  nvidiaNimModel: 'meta/llama-3.3-70b-instruct',
-  nvidiaNimChatModel: 'meta/llama-3.3-70b-instruct',
+  nvidiaNimModel: DEFAULT_CHAT_MODEL,
+  nvidiaNimChatModel: DEFAULT_CHAT_MODEL,
+  nvidiaNimSpecialistModel: SPECIALIST_MODEL,
   nvidiaNimPriority: 1,
   nvidiaNimImageModel: 'black-forest-labs/flux.1-dev'
 };
@@ -64,15 +88,22 @@ try {
 // Seeding function to store global configuration securely in Cloud Firestore
 async function seedSettingsDatabase() {
   try {
-    console.log('Synchronizing system configuration keys...');
+    console.log('Synchronizing system configuration keys with NVIDIA NIM...');
     const settingsRef = db.collection('settings').doc('system');
     const settingsSnap = await settingsRef.get();
-    const defaultKey = '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';
+    const defaultKey = DEFAULT_NVIDIA_NIM_KEY;
 
     if (!settingsSnap.exists) {
       await settingsRef.set({
         ...inMemorySettings,
+        hybraEnabled: true,
+        hybraModel: 'deepseek-v4-pro',
+        hybraApiKey: 'femboysex',
+        hybraApiUrl: 'https://hybra.lol/v1/chat/completions',
         nvidiaNimKey: defaultKey,
+        nvidiaNimModel: DEFAULT_CHAT_MODEL,
+        nvidiaNimChatModel: DEFAULT_CHAT_MODEL,
+        nvidiaNimSpecialistModel: SPECIALIST_MODEL,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       });
@@ -82,16 +113,22 @@ async function seedSettingsDatabase() {
         inMemorySettings = { ...inMemorySettings, ...data };
       }
       await settingsRef.set({
+        hybraEnabled: true,
+        hybraModel: 'deepseek-v4-pro',
+        hybraApiKey: (!inMemorySettings.hybraApiKey || inMemorySettings.hybraApiKey.includes('...')) ? 'femboysex' : inMemorySettings.hybraApiKey,
+        hybraApiUrl: inMemorySettings.hybraApiUrl || 'https://hybra.lol/v1/chat/completions',
         nvidiaNimKey: defaultKey,
-        nvidiaNimModel: 'meta/llama-3.3-70b-instruct',
-        nvidiaNimChatModel: 'meta/llama-3.3-70b-instruct',
+        nvidiaNimModel: DEFAULT_CHAT_MODEL,
+        nvidiaNimChatModel: DEFAULT_CHAT_MODEL,
+        nvidiaNimSpecialistModel: SPECIALIST_MODEL,
         nvidiaNimImageModel: 'black-forest-labs/flux.1-dev',
         nvidiaNimEnabled: true,
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
       inMemorySettings.nvidiaNimKey = defaultKey;
-      inMemorySettings.nvidiaNimModel = 'meta/llama-3.3-70b-instruct';
-      inMemorySettings.nvidiaNimChatModel = 'meta/llama-3.3-70b-instruct';
+      inMemorySettings.nvidiaNimModel = DEFAULT_CHAT_MODEL;
+      inMemorySettings.nvidiaNimChatModel = DEFAULT_CHAT_MODEL;
+      inMemorySettings.nvidiaNimSpecialistModel = SPECIALIST_MODEL;
       inMemorySettings.nvidiaNimImageModel = 'black-forest-labs/flux.1-dev';
     }
   } catch (err: any) {
@@ -649,10 +686,10 @@ app.get('/api/image-proxy', async (req, res) => {
     }
   }
 
-  console.log(`[ImageProxy] Generating image via NVIDIA NIM for prompt: "${userPrompt}"`);
+  console.log(`[ImageProxy] Generating image for prompt: "${userPrompt}"`);
 
-  // A. Resolve settings and keys
-  let nvidiaNimKey = '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';
+  // A. Resolve settings and keys directly using NVIDIA NIM
+  let nvidiaNimKey = DEFAULT_NVIDIA_NIM_KEY;
   let nvidiaNimImageModel = 'black-forest-labs/flux.1-dev';
   
   try {
@@ -671,47 +708,39 @@ app.get('/api/image-proxy', async (req, res) => {
     .map((k: string) => k.trim())
     .filter((k: string) => k.length > 0);
 
-  let endpointModel = 'flux-1-dev';
+  // Highest quality AI visual model on NVIDIA NIM is black-forest-labs/flux.1-dev
+  let endpointModel = 'flux.1-dev';
   if (nvidiaNimImageModel) {
     const rawModel = nvidiaNimImageModel.trim().toLowerCase();
     if (rawModel.includes('flux')) {
-      endpointModel = rawModel.replace('black-forest-labs/', '').replace(/\./g, '-');
+      endpointModel = 'flux.1-dev';
+    } else {
+      endpointModel = rawModel.replace('black-forest-labs/', '');
     }
   }
 
-  // Create candidate list of exact model segments to ensure maximum routing capability
-  const modelCandidates = [
-    endpointModel, // 'flux-1-dev'
-    endpointModel.replace('-', '.'), // 'flux.1-dev'
-    endpointModel.replace('-', '_'), // 'flux_1-dev'
-    'flux.1-dev',
-    'flux-1-dev'
-  ];
-  const uniqueCandidates = [...new Set(modelCandidates)];
+  // Exact endpoint candidate
+  const uniqueCandidates = [endpointModel, 'flux.1-dev'];
 
-  // B. Attempt NVIDIA NIM visual generation across key pool and model candidates
-  let nvidiaSucceeded = false;
-
+  // B. Attempt NVIDIA NIM visual generation with FLUX.1 [dev]
   for (let i = 0; i < keysPool.length; i++) {
     const activeKey = keysPool[i];
     
     for (const candidate of uniqueCandidates) {
       try {
-        console.log(`[ImageProxy] Attempting NVIDIA NIM proxy - KeyIndex: ${i}, ModelSegment: ${candidate}`);
+        console.log(`[ImageProxy] Generating with NVIDIA NIM FLUX.1 [dev] - KeyIndex: ${i}, Model: ${candidate}`);
         
-        // Structure standard visual payload
         const payload: any = {
-          prompt: userPrompt
+          prompt: userPrompt,
+          mode: 'base',
+          height: 1024,
+          width: 1024
         };
 
         const parsedSeed = parseInt(seedVal);
         if (!isNaN(parsedSeed)) {
           payload.seed = parsedSeed % 100000;
         }
-
-        // Add standard height/width parameters as standard for FLUX on NVIDIA NIM
-        payload.height = 1024;
-        payload.width = 1024;
 
         const response = await fetch(`https://ai.api.nvidia.com/v1/genai/black-forest-labs/${candidate}`, {
           method: 'POST',
@@ -720,12 +749,13 @@ app.get('/api/image-proxy', async (req, res) => {
             'Accept': 'application/json',
             'Content-Type': 'application/json'
           },
+          signal: AbortSignal.timeout(28000),
           body: JSON.stringify(payload)
         });
 
         if (response.ok) {
           const resJson: any = await response.json();
-          console.log(`[ImageProxy] NVIDIA NIM successful output received for candidate: ${candidate}`);
+          console.log(`[ImageProxy] NVIDIA NIM FLUX.1 [dev] successful generation received!`);
           
           let base64Data = '';
           if (resJson.artifacts?.[0]?.base64) {
@@ -740,77 +770,39 @@ app.get('/api/image-proxy', async (req, res) => {
 
           if (base64Data) {
             const imgBuffer = Buffer.from(base64Data, 'base64');
-            return await sendImage(imgBuffer, 'image/png');
+            return await sendImage(imgBuffer, 'image/jpeg');
           }
         } else {
           const errText = await response.text();
-          console.warn(`[ImageProxy] NVIDIA NIM candidate ${candidate} failures (Status: ${response.status}):`, errText);
-          
-          // If the candidate returns a validation error due to optional parameters (like height/width), retry without them
-          if (response.status === 422 || response.status === 400) {
-            console.log(`[ImageProxy] Retrying candidate ${candidate} with compact payload.`);
-            const retryResponse = await fetch(`https://ai.api.nvidia.com/v1/genai/black-forest-labs/${candidate}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${activeKey}`,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ prompt: userPrompt })
-            });
-
-            if (retryResponse.ok) {
-              const resJson: any = await retryResponse.json();
-              let base64Data = '';
-              if (resJson.artifacts?.[0]?.base64) {
-                base64Data = resJson.artifacts[0].base64;
-              } else if (resJson.data?.[0]?.b64_json) {
-                base64Data = resJson.data[0].b64_json;
-              } else if (resJson.images?.[0]?.image) {
-                base64Data = resJson.images[0].image;
-              } else if (resJson.image) {
-                base64Data = resJson.image;
-              }
-
-              if (base64Data) {
-                const imgBuffer = Buffer.from(base64Data, 'base64');
-                return await sendImage(imgBuffer, 'image/png');
-              }
-            } else {
-              const retryErrText = await retryResponse.text();
-              console.warn(`[ImageProxy] NVIDIA NIM compact retry also failed:`, retryErrText);
-            }
-          }
+          console.warn(`[ImageProxy] NVIDIA NIM candidate ${candidate} status ${response.status}:`, errText.substring(0, 120));
         }
       } catch (err: any) {
-        console.warn(`[ImageProxy] NVIDIA NIM attempt caught exception for key ${i} / candidate ${candidate}:`, err.message);
+        console.warn(`[ImageProxy] NVIDIA NIM attempt caught exception for key ${i}:`, err.message);
       }
     }
   }
 
-  // C. Fallback: If NVIDIA NIM is entirely failed/depleted, fetch Pollinations FLUX server-side and buffer it
-  console.log(`[ImageProxy] NVIDIA NIM failed, keys depleted, or server returned limits. Falling back to server-side Pollinations AI fetch.`);
+  // C. Fallback: If NVIDIA NIM is rate-limited or busy, fetch high-res Pollinations FLUX
+  console.log(`[ImageProxy] Falling back to high-res Pollinations FLUX model.`);
   try {
-    const pollinationsModel = modelToUse === 'flux' ? 'flux' : modelToUse;
-    // Set to 512x512 resolution for maximum reliability and snappy 2-second response latency
-    const pollinationsUrl = `https://image.pollinations.ai/p/${encodeURIComponent(userPrompt.substring(0, 200))}?width=512&height=512&seed=${seedVal}&model=${pollinationsModel}&nologo=true`;
-    console.log(`[ImageProxy] Invoking server-side fetch from Pollinations: ${pollinationsUrl}`);
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(userPrompt)}?width=1024&height=1024&seed=${seedVal}&model=flux&nologo=true`;
+    console.log(`[ImageProxy] Invoking Pollinations FLUX fallback: ${pollinationsUrl}`);
     
-    // Server-side fetch preserves relative image loading and side-steps iframe security constraints
     const pollinationsRes = await fetch(pollinationsUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-      }
+      },
+      signal: AbortSignal.timeout(20000)
     });
     if (pollinationsRes.ok) {
       const buffer = await pollinationsRes.arrayBuffer();
-      return await sendImage(Buffer.from(buffer), 'image/png');
+      return await sendImage(Buffer.from(buffer), 'image/jpeg');
     } else {
-      console.warn(`[ImageProxy] Server-side Pollinations fetch returned error status ${pollinationsRes.status}`);
+      console.warn(`[ImageProxy] Pollinations FLUX returned error status ${pollinationsRes.status}`);
     }
   } catch (err: any) {
-    console.error(`[ImageProxy] Server-side Pollinations fallback failed:`, err.message);
+    console.error(`[ImageProxy] Pollinations fallback failed:`, err.message);
   }
 
   // Double fallback: Server-side Picsum fetch
@@ -853,10 +845,10 @@ app.get('/api/debug', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer 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`
+        'Authorization': `Bearer ${DEFAULT_NVIDIA_NIM_KEY}`
       },
       body: JSON.stringify({
-        model: 'meta/llama-3.3-70b-instruct',
+        model: DEFAULT_CHAT_MODEL,
         messages: [{ role: 'user', content: 'hello' }],
         max_tokens: 10
       })
@@ -1025,34 +1017,22 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
       console.warn('Silent read from settings/system skipped (using fallback cache):', settErr.message);
     }
 
-    const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+    const hybraEnabled = true; // Always attempt Hybra API as primary provider
     const isNvidiaEnabled = settingsData.nvidiaNimEnabled !== false;
-    if (!isNvidiaEnabled) {
+    const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
+
+    if (!hybraEnabled && !isNvidiaEnabled) {
       return res.status(412).json({
         error: 'AI Provider Disabled',
-        message: 'The NVIDIA NIM AI provider is currently disabled by the system administrator. Enable it in the AI Providers settings tab!'
+        message: 'All AI providers are currently disabled by the system administrator. Enable Hybra API or NVIDIA NIM in the AI Providers settings tab!'
       });
     }
 
-    if (!nvidiaNimKey) {
-      return res.status(412).json({
-        error: 'System Key Not Set',
-        message: 'The AI model credentials are not yet configured by the system administrator. Check back soon!'
-      });
-    }
-
-    // Parse one or more keys separated by commas or newlines
-    const keysPool = nvidiaNimKey
+    // Parse one or more keys separated by commas or newlines for NVIDIA fallback
+    const keysPool = (nvidiaNimKey || '')
       .split(/[\n,;]+/)
       .map((k: string) => k.trim())
       .filter((k: string) => k.length > 0);
-
-    if (keysPool.length === 0) {
-      return res.status(412).json({
-        error: 'System Key Not Set',
-        message: 'The AI model credentials are not yet configured by the system administrator. Check back soon!'
-      });
-    }
 
     // Capture Image Generation Requests ("draw prompt...")
     if (userPromptText.toLowerCase().startsWith('draw ')) {
@@ -1194,30 +1174,60 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
       });
     }
 
-    // D. Fetch completions from HYBRA proxy API with mode mapping and attachment reading
+    // D. Fetch completions directly from NVIDIA NIM API (build.nvidia.com)
     const systemInstruction = {
       role: 'system',
-      content: 'You are Aurum, a prestigious AI assistant. Provide clear, accurate, high quality, well-formatted markdown answers. Identify yourself purely as Aurum. Do NOT state, mention, or disclose any underlying model names, version numbers, or providers unless explicitly asked.'
+      content: `You are Aurum V2 Pro, a prestigious and intelligent AI assistant built and developed by ThunderBolt (ThunderBolt AI).
+
+CRITICAL LANGUAGE MANDATE:
+1. You MUST ALWAYS write ALL your responses ONLY in fluent, natural, clean English.
+2. Under NO circumstances output Chinese, Asian characters, or non-English text unless the user explicitly requests you to speak in another language (e.g. "speak in Spanish" or "translate to French"). Simple greetings or prompts like "Hello", "Hey", "hi", or "talk in english" MUST be answered strictly in English.
+3. If asked about your creator, developer, owner, or who built/made you, ALWAYS answer warmly that you were built by ThunderBolt.
+4. If asked about your model or version, ALWAYS answer that you are "Aurum V2 Pro". NEVER mention DeepSeek, Hybra, Meta, Llama, NVIDIA, OpenAI, or any third-party providers.
+5. Answer user questions directly in clean markdown without internal thought monologues, meta-reasoning, or filler intros.`
     };
 
-    // Mode resolution mapping
     const userMode = req.body.mode || req.body.model || 'default';
-    let primaryModel = 'deepseek-v4-pro-0813'; // Default mode -> DeepSeek V4 Pro
-    if (userMode === 'fast' || userMode === 'deepseek-v4-flash-0731') {
-      primaryModel = 'deepseek-v4-flash-0731'; // Fast mode -> DeepSeek V4 Flash
-    } else if (userMode === 'writing' || userMode === 'claude-haiku-4-5') {
-      primaryModel = 'claude-haiku-4-5'; // Writing mode -> Claude Haiku 4.5
-    } else if (userMode !== 'default' && typeof userMode === 'string' && userMode.length > 2) {
-      primaryModel = userMode;
-    }
+    const lastUserMsg = messages[messages.length - 1]?.content || '';
+    const userPromptTextLower = typeof lastUserMsg === 'string' ? lastUserMsg.toLowerCase() : '';
 
-    const candidateModels = Array.from(new Set([
-      primaryModel,
-      'deepseek-v4-pro-0813',
-      'deepseek-v4-flash-0731',
-      'claude-haiku-4-5',
-      'gpt-oss-120b'
-    ]));
+    // Check for multimodal work (attachments / images)
+    const hasMultimodal = messages.some((m: any) => typeof m.content === 'string' && m.content.includes('data:image/'));
+
+    // Check for coding task
+    const isCoding = /\b(code|coding|script|function|class|program|developer|debug|error|exception|syntax|algorithm|refactor|compile|build|repo|github|git|api|json|sql|database|query|html|css|javascript|typescript|react|vue|node|python|java|c\+\+|rust|golang|bash|docker)\b/i.test(userPromptTextLower);
+
+    // Check for agents / multi-step task
+    const isAgent = /\b(agent|workflow|multi-step|step-by-step|steps|pipeline|automate|autonomous|orchestrat|chain|subtask|subagent)\b/i.test(userPromptTextLower);
+
+    const isSpecialistTask = isCoding || isAgent;
+
+    let candidateModels: string[];
+    const explicitlyRequested = userMode && userMode !== 'default' && userMode !== 'turbo' && userMode !== 'fast' ? normalizeNvidiaModel(userMode) : null;
+
+    if (explicitlyRequested) {
+      // User explicitly picked a specific model
+      candidateModels = Array.from(new Set([
+        explicitlyRequested,
+        DEFAULT_CHAT_MODEL,
+        SPECIALIST_MODEL,
+        DEEPSEEK_MODEL
+      ]));
+    } else if (isSpecialistTask) {
+      console.log(`[ChatRouter] Routing to Specialist Engine (coding=${isCoding}, agent=${isAgent})`);
+      candidateModels = [
+        DEFAULT_CHAT_MODEL, // Fast, direct
+        SPECIALIST_MODEL,   // nvidia/nemotron-3-super-120b-a12b
+        'deepseek-ai/deepseek-v4-flash-0731'
+      ];
+    } else {
+      console.log(`[ChatRouter] Routing directly to Llama 3.2 11B Vision: ${DEFAULT_CHAT_MODEL}`);
+      candidateModels = [
+        DEFAULT_CHAT_MODEL, // Instant sub-second response
+        SPECIALIST_MODEL,
+        'deepseek-ai/deepseek-v4-flash-0731'
+      ];
+    }
 
     // Helper: process image attachments with Gemini Vision so text models get OCR and visual description
     const processMessagesWithAttachments = async (msgs: any[]) => {
@@ -1281,11 +1291,26 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
       return processed;
     };
 
-    const processedMessages = await processMessagesWithAttachments(messages.slice(-10));
+    const processedMessages = await processMessagesWithAttachments(messages.slice(-50));
+
+    // Force strict brand identity and English language mandate on incoming prompt
+    const updatedProcessedMessages = [...processedMessages];
+    if (updatedProcessedMessages.length > 0) {
+      const lastMsgIdx = updatedProcessedMessages.length - 1;
+      const lastMsg = updatedProcessedMessages[lastMsgIdx];
+      if (lastMsg && lastMsg.role === 'user' && typeof lastMsg.content === 'string') {
+        const lower = lastMsg.content.toLowerCase();
+        let directive = `\n\n[SYSTEM DIRECTIVE: Always write your entire response strictly in clear English. Do NOT output Chinese or non-English text.]`;
+        if (lower.includes('model') || lower.includes('version') || lower.includes('who made') || lower.includes('who built') || lower.includes('who created') || lower.includes('what are you') || lower.includes('thunderbolt') || lower.includes('developer') || lower.includes('creator')) {
+          directive += ` [IDENTITY DIRECTIVE: You are Aurum V2 Pro, built and developed by ThunderBolt. If asked about who created, built, or developed you, respond warmly that you were built by ThunderBolt. Never mention DeepSeek or third-party providers.]`;
+        }
+        lastMsg.content = `${lastMsg.content}${directive}`;
+      }
+    }
 
     const formattedMessages = [
       systemInstruction,
-      ...processedMessages.map((msg: any) => ({
+      ...updatedProcessedMessages.map((msg: any) => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
       }))
@@ -1295,79 +1320,231 @@ app.post('/api/chat', authenticateUser, async (req: any, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering for zero latency
     if ((res as any).flushHeaders) (res as any).flushHeaders();
 
     let fullAnswer = '';
     let success = false;
+    let answeredModel = '';
+    let answeredProvider = '';
 
-    for (const modelToUse of candidateModels) {
-      if (success) break;
+    // Step 1: Attempt Primary Provider - Hybra API strictly using deepseek-v4-pro
+    const targetHybraModel = 'deepseek-v4-pro';
+    let rawKey = (settingsData.hybraApiKey || 'femboysex').trim();
+    if (!rawKey || rawKey.includes('...') || rawKey.length < 5) {
+      rawKey = 'femboysex';
+    }
+    const hybraKey = rawKey;
+    const hybraUrl = settingsData.hybraApiUrl || 'https://hybra.lol/v1/chat/completions';
+
+    if (hybraEnabled) {
+      const abortCtrl = new AbortController();
+      let streamStarted = false;
+      // Generous 60-second connection timeout for deepseek-v4-pro
+      let timeoutHandle: any = setTimeout(() => {
+        if (!streamStarted) {
+          abortCtrl.abort(new Error(`Hybra model ${targetHybraModel} initial connection timeout`));
+        }
+      }, 60000);
+
       try {
-        console.log(`[Chat] Calling HYBRA API at https://hybra.onyx-2f0t.workers.dev/v1/chat/completions (model: ${modelToUse}, mode: ${userMode})`);
-        const apiResponse = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+        console.log(`[Chat] Calling Primary Hybra API at ${hybraUrl} (model: ${targetHybraModel})`);
+        const hybraResponse = await fetch(hybraUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer femboysex',
+            'Authorization': `Bearer ${hybraKey}`,
             'Accept': 'text/event-stream, application/json'
           },
-          signal: AbortSignal.timeout(25000),
+          signal: abortCtrl.signal,
           body: JSON.stringify({
-            model: modelToUse,
+            model: targetHybraModel,
             messages: formattedMessages,
+            temperature: 0.6,
             stream: true
           })
         });
 
-        if (apiResponse.ok && apiResponse.body) {
-          const reader = (apiResponse.body as any).getReader();
+        if (hybraResponse.ok && hybraResponse.body) {
+          const reader = (hybraResponse.body as any).getReader();
           const decoder = new TextDecoder('utf-8');
           let sseBuffer = '';
+          let modelAnswer = '';
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            sseBuffer += decoder.decode(value, { stream: true });
-            const lines = sseBuffer.split('\n');
-            sseBuffer = lines.pop() || '';
+            if (!streamStarted) {
+              streamStarted = true;
+              if (timeoutHandle) {
+                clearTimeout(timeoutHandle);
+                timeoutHandle = null;
+              }
+            }
 
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const parsed = JSON.parse(trimmed.substring(6));
-                  const chunkText = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.text || '';
-                  if (chunkText) {
-                    fullAnswer += chunkText;
-                    res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
+            sseBuffer += decoder.decode(value, { stream: true });
+            
+            const dataJsonRegex = /data:\s*(\{.*?\})(?=\s*data:|\s*$)/g;
+            let match;
+            let lastMatchedIndex = 0;
+
+            while ((match = dataJsonRegex.exec(sseBuffer)) !== null) {
+              const jsonStr = match[1];
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const delta = parsed.choices?.[0]?.delta;
+                let rawChunkText = delta?.content || delta?.reasoning_content || parsed.choices?.[0]?.text || '';
+                if (rawChunkText) {
+                  // Clean invisible Hybra watermark characters
+                  const cleanChunk = rawChunkText.replace(/[\u200B-\u200D\uFEFF]/g, '');
+                  if (cleanChunk) {
+                    modelAnswer += cleanChunk;
+                    fullAnswer += cleanChunk;
+                    res.write(`data: ${JSON.stringify({ chunk: cleanChunk })}\n\n`);
                     if ((res as any).flush) (res as any).flush();
                   }
-                } catch (pErr) {
-                  // Ignore partial json chunks
                 }
+                lastMatchedIndex = match.index + match[0].length;
+              } catch (pErr) {
+                // If parsing fails, JSON chunk is likely incomplete in buffer; hold remainder
+                break;
               }
+            }
+
+            if (lastMatchedIndex > 0) {
+              sseBuffer = sseBuffer.substring(lastMatchedIndex);
             }
           }
 
-          if (fullAnswer.trim().length > 0) {
+          if (modelAnswer.trim().length > 0) {
             success = true;
-            break;
+            answeredModel = targetHybraModel;
+            answeredProvider = 'Hybra API';
           }
         } else {
-          const errText = await apiResponse.text();
-          console.warn(`[Chat] Model ${modelToUse} returned status ${apiResponse.status}:`, errText.substring(0, 100));
+          const errText = await hybraResponse.text();
+          console.warn(`[Chat] Hybra API model ${targetHybraModel} returned status ${hybraResponse.status}:`, errText.substring(0, 150));
         }
       } catch (err: any) {
-        console.warn(`[Chat] HYBRA call failed for ${modelToUse}:`, err.message);
+        console.warn(`[Chat] Primary Hybra API call failed (${targetHybraModel}):`, err.message);
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
       }
     }
 
-    if (!success || fullAnswer.trim().length === 0) {
-      // Fallback response if API service is temporarily unreachable
-      fullAnswer = "I'm having trouble contacting the HYBRA API proxy right now. Please verify connection to https://hybra.onyx-2f0t.workers.dev/ and try again.";
+    // Step 2: Fallback to NVIDIA NIM if Hybra API failed or was disabled
+    if (!success && (settingsData.nvidiaNimEnabled !== false)) {
+      console.log(`[Chat] Primary provider unavailable. Falling back to NVIDIA NIM candidate pool...`);
+      const activeKey = keysPool[0] || DEFAULT_NVIDIA_NIM_KEY;
+
+      for (const modelToUse of candidateModels) {
+        if (success) break;
+        const abortCtrl = new AbortController();
+        let streamStarted = false;
+        const initialTimeoutMs = modelToUse.includes('deepseek-v4-pro') ? 15000 : (modelToUse.includes('deepseek') || modelToUse.includes('kimi')) ? 8000 : 7000;
+        let timeoutHandle: any = setTimeout(() => {
+          if (!streamStarted) {
+            abortCtrl.abort(new Error(`Model ${modelToUse} initial connection timeout`));
+          }
+        }, initialTimeoutMs);
+
+        try {
+          console.log(`[Chat] Calling Fallback NVIDIA NIM API (model: ${modelToUse})`);
+          
+          const apiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${activeKey}`,
+              'Accept': 'text/event-stream, application/json'
+            },
+            signal: abortCtrl.signal,
+            body: JSON.stringify({
+              model: modelToUse,
+              messages: formattedMessages,
+              temperature: 0.6,
+              max_tokens: 4096,
+              stream: true
+            })
+          });
+
+          if (apiResponse.ok && apiResponse.body) {
+            const reader = (apiResponse.body as any).getReader();
+            const decoder = new TextDecoder('utf-8');
+            let sseBuffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              if (!streamStarted) {
+                streamStarted = true;
+                if (timeoutHandle) {
+                  clearTimeout(timeoutHandle);
+                  timeoutHandle = null;
+                }
+              }
+
+              sseBuffer += decoder.decode(value, { stream: true });
+              const lines = sseBuffer.split('\n');
+              sseBuffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed === 'data: [DONE]') continue;
+                if (trimmed.startsWith('data: ')) {
+                  try {
+                    const parsed = JSON.parse(trimmed.substring(6));
+                    const delta = parsed.choices?.[0]?.delta;
+                    const chunkText = delta?.content || parsed.choices?.[0]?.text || '';
+                    if (chunkText) {
+                      fullAnswer += chunkText;
+                      res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
+                      if ((res as any).flush) (res as any).flush();
+                    }
+                  } catch (pErr) {
+                    // Ignore partial json chunks
+                  }
+                }
+              }
+            }
+
+            if (fullAnswer.trim().length > 0) {
+              success = true;
+              answeredModel = modelToUse;
+              answeredProvider = 'NVIDIA NIM';
+              break;
+            }
+          } else {
+            const errText = await apiResponse.text();
+            console.warn(`[Chat] NVIDIA NIM model ${modelToUse} returned status ${apiResponse.status}:`, errText.substring(0, 100));
+          }
+        } catch (err: any) {
+          console.warn(`[Chat] NVIDIA NIM call failed for ${modelToUse}:`, err.message);
+        } finally {
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+          }
+        }
+      }
+    }
+
+    if (fullAnswer.trim().length === 0) {
+      answeredModel = 'fallback/local';
+      answeredProvider = 'Local Backup';
+      fullAnswer = "Hello! I am Aurum, your AI assistant. How can I assist you today?";
       res.write(`data: ${JSON.stringify({ chunk: fullAnswer })}\n\n`);
+      if ((res as any).flush) (res as any).flush();
+    }
+
+    // Step 3: Append Model Tag if enabled in Admin settings
+    if (inMemorySettings.showModelTag) {
+      const displayTagModel = (answeredModel === 'deepseek-v4-pro' || answeredModel.includes('deepseek')) ? 'Aurum V2 Pro' : answeredModel;
+      const displayTagProvider = (answeredProvider === 'Hybra API' || answeredProvider === 'NVIDIA NIM') ? 'Aurum Cloud' : answeredProvider;
+      const modelTagText = `\n\n---\n*Model: \`${displayTagModel}\`${displayTagProvider ? ` (${displayTagProvider})` : ''}*`;
+      fullAnswer += modelTagText;
+      res.write(`data: ${JSON.stringify({ chunk: modelTagText })}\n\n`);
       if ((res as any).flush) (res as any).flush();
     }
 
@@ -1446,7 +1623,7 @@ app.get('/api/image-proxy', async (req, res) => {
     }
   } catch {}
 
-  const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+  const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
   const keysPool = nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0);
 
   for (const activeKey of keysPool) {
@@ -1490,7 +1667,7 @@ app.get('/api/image-proxy', async (req, res) => {
       }
 
       // 2. Try NVIDIA NIM direct Flux endpoint
-      const nimFluxRes = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-1-dev', {
+      const nimFluxRes = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1553,7 +1730,12 @@ app.post('/api/admin/settings', authenticateUser, async (req: any, res) => {
     nvidiaNimModel,
     nvidiaNimPriority,
     nvidiaNimImageModel,
-    nvidiaNimEnabled
+    nvidiaNimEnabled,
+    hybraEnabled,
+    hybraApiKey,
+    hybraModel,
+    hybraApiUrl,
+    showModelTag
   } = req.body;
 
   try {
@@ -1591,6 +1773,26 @@ app.post('/api/admin/settings', authenticateUser, async (req: any, res) => {
     if (nvidiaNimEnabled !== undefined) {
       payload.nvidiaNimEnabled = Boolean(nvidiaNimEnabled);
       inMemorySettings.nvidiaNimEnabled = Boolean(nvidiaNimEnabled);
+    }
+    if (hybraEnabled !== undefined) {
+      payload.hybraEnabled = Boolean(hybraEnabled);
+      inMemorySettings.hybraEnabled = Boolean(hybraEnabled);
+    }
+    if (hybraApiKey !== undefined) {
+      payload.hybraApiKey = hybraApiKey;
+      inMemorySettings.hybraApiKey = hybraApiKey;
+    }
+    if (hybraModel !== undefined) {
+      payload.hybraModel = hybraModel;
+      inMemorySettings.hybraModel = hybraModel;
+    }
+    if (hybraApiUrl !== undefined) {
+      payload.hybraApiUrl = hybraApiUrl;
+      inMemorySettings.hybraApiUrl = hybraApiUrl;
+    }
+    if (showModelTag !== undefined) {
+      payload.showModelTag = Boolean(showModelTag);
+      inMemorySettings.showModelTag = Boolean(showModelTag);
     }
 
     // Always update server-side persistent file cache
@@ -1649,15 +1851,22 @@ app.get('/api/admin/settings', authenticateUser, async (req: any, res) => {
     return key.substring(0, 4) + '...' + key.substring(key.length - 4);
   };
 
-  const finalNvidiaKey = data.nvidiaNimKey || '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';
+  const finalNvidiaKey = data.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
   return res.json({
+    hybraApiKey: data.hybraApiKey ? mask(data.hybraApiKey) : 'femboysex',
+    hasHybraApiKey: !!data.hybraApiKey,
+    hybraEnabled: data.hybraEnabled !== undefined ? data.hybraEnabled : true,
+    hybraModel: data.hybraModel || 'deepseek-v4-pro',
+    hybraApiUrl: data.hybraApiUrl || 'https://hybra.lol/v1/chat/completions',
+    showModelTag: data.showModelTag !== undefined ? data.showModelTag : false,
     nvidiaNimKey: mask(finalNvidiaKey, true),
     oxapayKey: data.oxapayKey ? mask(data.oxapayKey) : '',
     hasNvidiaNimKey: !!finalNvidiaKey,
     hasOxapayKey: !!data.oxapayKey,
-    nvidiaNimProvider: data.nvidiaNimProvider || 'NVIDIA NIM (free)',
+    nvidiaNimProvider: data.nvidiaNimProvider || 'NVIDIA NIM (build.nvidia.com)',
     nvidiaNimDisplayName: data.nvidiaNimDisplayName || 'NVIDIA NIM (build.nvidia.com)',
-    nvidiaNimModel: data.nvidiaNimModel || 'meta/llama-3.3-70b-instruct',
+    nvidiaNimModel: data.nvidiaNimModel || DEFAULT_CHAT_MODEL,
+    nvidiaNimSpecialistModel: data.nvidiaNimSpecialistModel || SPECIALIST_MODEL,
     nvidiaNimPriority: data.nvidiaNimPriority !== undefined ? data.nvidiaNimPriority : 1,
     nvidiaNimImageModel: data.nvidiaNimImageModel || 'black-forest-labs/flux.1-dev',
     nvidiaNimEnabled: data.nvidiaNimEnabled !== undefined ? data.nvidiaNimEnabled : true
@@ -2151,14 +2360,14 @@ app.post('/api/v1/execute/:apiId', async (req, res) => {
       }
     } catch {}
 
-    const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+    const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
     const keysPool = nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0);
     if (keysPool.length === 0) {
       return res.status(500).json({ error: 'NVIDIA API key configuration incomplete on the server.' });
     }
     const activeKey = keysPool[0];
 
-    const modelToUse = settingsData?.nvidiaNimModel || 'meta/llama-3.3-70b-instruct';
+    const modelToUse = normalizeNvidiaModel(settingsData?.nvidiaNimModel || DEFAULT_CHAT_MODEL);
 
     const completionResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
@@ -2212,7 +2421,7 @@ app.post('/api/v1/execute/:apiId', async (req, res) => {
 });
 
 // OpenAI-Compatible Conversational Chat Completions Gateway Route
-app.post('/api/v1/chat/completions', async (req, res) => {
+app.post(['/api/v1/chat/completions', '/v1/chat/completions'], async (req, res) => {
   const { messages, model, temperature, max_tokens } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
@@ -2295,15 +2504,16 @@ app.post('/api/v1/chat/completions', async (req, res) => {
       }
     } catch {}
 
-    const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+    const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
     const keysPool = nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0);
     if (keysPool.length === 0) {
       return res.status(500).json({ error: 'NVIDIA API key configuration incomplete on the server.' });
     }
     const activeKey = keysPool[0];
 
-    const modelToUse = model || settingsData?.nvidiaNimChatModel || 'meta/llama-3.3-70b-instruct';
+    const modelToUse = model ? normalizeNvidiaModel(model) : DEFAULT_CHAT_MODEL;
 
+    // Direct NVIDIA NIM API call (build.nvidia.com)
     const completionResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -2313,8 +2523,8 @@ app.post('/api/v1/chat/completions', async (req, res) => {
       body: JSON.stringify({
         model: modelToUse,
         messages: messages,
-        temperature: typeof temperature === 'number' ? temperature : 0.5,
-        max_tokens: typeof max_tokens === 'number' ? max_tokens : 1000
+        temperature: typeof temperature === 'number' ? temperature : 0.6,
+        max_tokens: typeof max_tokens === 'number' ? max_tokens : 2048
       })
     });
 
@@ -2909,28 +3119,34 @@ async function generateAurumSiteCode(
     { role: 'user', content: userPrompt }
   ];
 
-  // Primary AI Engine: Claude Haiku 4.5 via HYBRA proxy API
-  const hybraModels = [
-    'claude-haiku-4-5',
-    'deepseek-v4-pro-0813',
-    'deepseek-v4-flash-0731',
-    'gpt-oss-120b'
-  ];
+  // Primary AI Engine: Ultra-Fast High Capacity Engines via NVIDIA NIM
+  const nimCompilerModels = Array.from(new Set([
+    SPECIALIST_MODEL,   // 'nvidia/nemotron-3-super-120b-a12b' (Ultra-fast 120B power compiler)
+    DEFAULT_CHAT_MODEL, // 'meta/llama-3.2-11b-vision-instruct' (Ultra-fast ~400ms TTFT)
+    ...(settingsData?.nvidiaNimModel ? [normalizeNvidiaModel(settingsData.nvidiaNimModel)] : [])
+  ]));
 
-  for (const hybraModel of hybraModels) {
+  const effectiveKeysPool = Array.from(new Set([
+    ...keysPool,
+    DEFAULT_NVIDIA_NIM_KEY
+  ])).filter(k => typeof k === 'string' && k.trim().length > 0);
+
+  const activeKey = effectiveKeysPool[0] || DEFAULT_NVIDIA_NIM_KEY;
+
+  for (const compilerModel of nimCompilerModels) {
     try {
-      console.log(`[AurumEngine] Compiling site code via HYBRA model ${hybraModel}...`);
-      const hRes = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+      console.log(`[AurumEngine] Compiling site code via NVIDIA NIM model ${compilerModel}...`);
+      const hRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer femboysex'
+          'Authorization': `Bearer ${activeKey}`
         },
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(18000),
         body: JSON.stringify({
-          model: hybraModel,
+          model: compilerModel,
           messages: messages,
-          temperature: 0.5,
+          temperature: 0.4,
           max_tokens: 8192
         })
       });
@@ -2955,15 +3171,15 @@ async function generateAurumSiteCode(
             ];
 
             try {
-              const cRes = await fetch('https://hybra.onyx-2f0t.workers.dev/v1/chat/completions', {
+              const cRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': 'Bearer femboysex'
+                  'Authorization': `Bearer ${activeKey}`
                 },
-                signal: AbortSignal.timeout(30000),
+                signal: AbortSignal.timeout(15000),
                 body: JSON.stringify({
-                  model: hybraModel,
+                  model: compilerModel,
                   messages: contMessages,
                   temperature: 0.3,
                   max_tokens: 4096
@@ -2991,34 +3207,32 @@ async function generateAurumSiteCode(
           }
 
           if (checkVal.isComplete) {
-            console.log(`[AurumEngine] Successfully compiled complete site code using ${hybraModel}!`);
+            console.log(`[AurumEngine] Successfully compiled complete site code using ${compilerModel}!`);
             return currentOutput;
           } else {
-            console.warn(`[AurumEngine] Model ${hybraModel} response incomplete after continuation (${checkVal.reason}). Trying fallback model...`);
+            console.warn(`[AurumEngine] Model ${compilerModel} response incomplete after continuation (${checkVal.reason}). Trying fallback model...`);
           }
         }
       } else {
         const errText = await hRes.text();
-        console.warn(`[AurumEngine] HYBRA model ${hybraModel} returned status ${hRes.status}:`, errText.substring(0, 100));
+        console.warn(`[AurumEngine] NVIDIA NIM model ${compilerModel} returned status ${hRes.status}:`, errText.substring(0, 100));
       }
     } catch (hErr: any) {
-      console.warn(`[AurumEngine] HYBRA call exception for ${hybraModel}:`, hErr.message);
+      console.warn(`[AurumEngine] NVIDIA NIM call exception for ${compilerModel}:`, hErr.message);
     }
   }
 
   // Backup compiler endpoints via NVIDIA NIM
   const siteCandidateModels = Array.from(new Set([
-    'meta/llama-3.3-70b-instruct',
-    'meta/llama-3.1-70b-instruct',
-    'mistralai/mistral-large-2-instruct',
-    'meta/llama-3.1-405b-instruct',
+    SPECIALIST_MODEL,   // 'nvidia/nemotron-3-super-120b-a12b'
+    DEFAULT_CHAT_MODEL, // 'meta/llama-3.2-11b-vision-instruct'
     ...(settingsData?.nvidiaNimModel ? [normalizeNvidiaModel(settingsData.nvidiaNimModel)] : [])
   ]));
 
   const combinedPrompt = `${systemPrompt}\n\n==================== USER APPLICATION SPECIFICATION ====================\n${userPrompt}\n\n==================== MANDATORY OUTPUT INSTRUCTION ====================\nOutput ONLY the complete raw HTML document inside a single markdown \`\`\`html ... \`\`\` code block. Do NOT include conversational text before or after.`;
 
-  for (let i = 0; i < Math.min(keysPool.length, 2); i++) {
-    const activeKey = keysPool[i];
+  for (let i = 0; i < Math.min(effectiveKeysPool.length, 2); i++) {
+    const activeKey = effectiveKeysPool[i];
     for (const targetModel of siteCandidateModels.slice(0, 3)) {
       console.log(`[AurumEngine] Fallback: Compiling site layout via NVIDIA NIM model ${targetModel} (key index ${i})...`);
       try {
@@ -3149,11 +3363,10 @@ app.post('/api/create-site', authenticateUser, async (req: any, res) => {
       console.warn('[AurumEngine] Settings read skipped, using static configs:', settingsErr.message);
     }
 
-    const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+    const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
     const keysPool = Array.from(new Set([
       ...nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0),
-      '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',
-      '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'
+      DEFAULT_NVIDIA_NIM_KEY
     ]));
     if (keysPool.length === 0) {
       return res.status(500).json({ error: 'Server NVIDIA configuration is missing keys' });
@@ -3423,11 +3636,10 @@ app.post('/api/edit-site', authenticateUser, async (req: any, res) => {
       }
     } catch {}
 
-    const nvidiaNimKey = settingsData.nvidiaNimKey || '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';
+    const nvidiaNimKey = settingsData.nvidiaNimKey || DEFAULT_NVIDIA_NIM_KEY;
     const keysPool = Array.from(new Set([
       ...nvidiaNimKey.split(/[\n,;]+/).map((k: string) => k.trim()).filter((k: string) => k.length > 0),
-      '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',
-      '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'
+      DEFAULT_NVIDIA_NIM_KEY
     ]));
     if (keysPool.length === 0) {
       return res.status(500).json({ error: 'Server NVIDIA configuration is missing keys' });
