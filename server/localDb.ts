@@ -29,14 +29,12 @@ const defaultDbData: LocalDbSchema = {
   sessions: {},
   settings: {
     system: {
-      nvidiaNimKey: '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',
-      nvidiaNimEnabled: true,
-      nvidiaNimProvider: 'NVIDIA NIM (free)',
-      nvidiaNimDisplayName: 'NVIDIA NIM (build.nvidia.com)',
-      nvidiaNimModel: 'meta/llama-3.3-70b-instruct',
-      nvidiaNimChatModel: 'meta/llama-3.3-70b-instruct',
-      nvidiaNimPriority: 1,
-      nvidiaNimImageModel: 'black-forest-labs/flux.1-dev',
+      vyceApiUrl: 'https://vyceai.com/v1/chat/completions',
+      vyceApiKey: 'sk-385822fcac9c0355680ccadd2a4288b474a2fb69c05f05c9',
+      vyceBackupApiKey: 'sk-9372b64064b092d9b2fbc8ad4b5d2f292ebb6ab0163f9bcf',
+      defaultChatModel: 'deepseek-v4.1',
+      claudeModel: 'claude-sonnet-4-6',
+      siteBuilderModel: 'deepseek-v4.1',
       oxapayKey: '',
       adminEmails: ['teamthunderofficialyt@gmail.com', 'freefiregtamcpe@gmail.com'],
       updatedAt: new Date().toISOString()
@@ -49,14 +47,25 @@ const defaultDbData: LocalDbSchema = {
       id: 'plan_free',
       name: 'Free (Spark)',
       priceINR: 0,
+      priceUSD: 0,
       queriesLimit: 50,
-      description: 'Standard daily generative capacity (50 priority queries per day).',
+      description: 'Standard daily generative capacity (50 priority queries per day + unlimited free usage at normal priority).',
+      createdAt: new Date().toISOString()
+    },
+    plan_claude: {
+      id: 'plan_claude',
+      name: 'Claude Plan',
+      priceINR: 420,
+      priceUSD: 5,
+      queriesLimit: 5000,
+      description: 'Exclusive Claude Sonnet 4.6 access, ultra-high priority compute lane, 5,000 priority queries/mo, and unlimited free generation.',
       createdAt: new Date().toISOString()
     },
     plan_starter: {
       id: 'plan_starter',
       name: 'Starter',
       priceINR: 199,
+      priceUSD: 2.5,
       queriesLimit: 250,
       description: 'Expanded daily allowance (250 priority queries per day) with accelerated models.',
       createdAt: new Date().toISOString()
@@ -65,6 +74,7 @@ const defaultDbData: LocalDbSchema = {
       id: 'plan_pro',
       name: 'Pro Sovereign',
       priceINR: 499,
+      priceUSD: 6,
       queriesLimit: 1000,
       description: 'High capacity allowance (1,000 priority queries per day) + priority synthesis.',
       createdAt: new Date().toISOString()
@@ -73,6 +83,7 @@ const defaultDbData: LocalDbSchema = {
       id: 'plan_pro_plus',
       name: 'Pro Plus',
       priceINR: 899,
+      priceUSD: 11,
       queriesLimit: 2500,
       description: 'Ultimate power allowance (2,500 priority queries per day) with developer API access.',
       createdAt: new Date().toISOString()
@@ -81,6 +92,7 @@ const defaultDbData: LocalDbSchema = {
       id: 'plan_enterprise',
       name: 'Enterprise',
       priceINR: 1999,
+      priceUSD: 24,
       queriesLimit: -1,
       description: 'Unlimited queries, dedicated GPU cluster access, and 24/7 priority support.',
       createdAt: new Date().toISOString()

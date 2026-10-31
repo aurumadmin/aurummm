@@ -1,6 +1,6 @@
 {
   "name": "Aurum",
-  "description": "A prestigious, high-end AI Companion powered by NVIDIA NIM (build.nvidia.com) with billing plans in INR via Oxapay.",
+  "description": "Aurum V3 Pro - Elite AI companion and autonomous website builder with sovereign intelligence and Claude Sonnet integration.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

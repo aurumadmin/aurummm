@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
 import AdminPage from './components/AdminPage';
+import ProjectWorkspace from './components/ProjectWorkspace';
 import {
   Sparkles,
   Settings,
@@ -42,17 +43,29 @@ import {
   FileCode,
   Image as ImageIcon,
   Download,
-  History
+  History,
+  Brain,
+  Zap,
+  Wrench,
+  ChevronDown
 } from 'lucide-react';
 
 // Initial standard system plans to seed if database is empty
 const BOOTSTRAPPED_PLANS: PricingPlan[] = [
   {
     id: 'plan_free',
-    name: 'Free',
+    name: 'Free (Spark)',
     priceINR: 0,
     queriesLimit: 50,
-    description: 'Explore with limited credits, perfect for trying it out.',
+    description: 'Explore with 50 priority queries/day + unlimited free standard usage.',
+    createdAt: new Date()
+  },
+  {
+    id: 'plan_claude',
+    name: 'Claude Plan ($5/mo)',
+    priceINR: 420,
+    queriesLimit: 5000,
+    description: 'Exclusive Claude Sonnet 4.6 access, highest priority GPU routing, 5,000 priority queries/mo + unlimited free tier.',
     createdAt: new Date()
   },
   {
@@ -483,10 +496,29 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatGenerating, setChatGenerating] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [chatMode, setChatMode] = useState<string>('meta/llama-3.2-11b-vision-instruct');
+  const [chatMode, setChatMode] = useState<'deepseek-v4.1' | 'agnes-3.0-flash' | 'gpt-6-luna' | 'glm-5.3-flash' | 'claude-sonnet-4-6'>('deepseek-v4.1');
+  const [modelDropdownOpen, setModelDropdownOpen] = useState<boolean>(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const [deepThinking, setDeepThinking] = useState<boolean>(false);
   const [imageMode, setImageMode] = useState<boolean>(false);
   const [imageCount, setImageCount] = useState<number>(1);
   const [accountModalOpen, setAccountModalOpen] = useState<boolean>(false);
+
+  // Close model selector dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setModelDropdownOpen(false);
+      }
+    };
+    if (modelDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [modelDropdownOpen]);
 
   // Custom API Integration dashboard states
   const [developerApis, setDeveloperApis] = useState<any[]>([]);
@@ -926,14 +958,18 @@ export default function App() {
 
   const handleDeleteCoupon = async (code: string) => {
     try {
+      setCoupons(prev => prev.filter(c => c.code.toUpperCase() !== code.toUpperCase()));
       const idToken = await user!.getIdToken();
-      await fetch(`/api/admin/coupons/${encodeURIComponent(code)}`, {
+      const res = await fetch(`/api/admin/coupons/${encodeURIComponent(code)}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
-      fetchCoupons();
+      if (!res.ok) {
+        fetchCoupons();
+      }
     } catch (err: any) {
       console.error('Failed to delete coupon:', err);
+      fetchCoupons();
     }
   };
 
@@ -1297,7 +1333,7 @@ export default function App() {
           inspirationFiles: inspirationFiles.map(f => ({
             name: f.name,
             type: f.type,
-            content: f.content
+            content: f.content || f.dataUrl
           }))
         })
       });
@@ -1635,18 +1671,19 @@ export default function App() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || chatGenerating || !user) return;
+    if (!inputMessage.trim() || !user) return;
+    if (chatGenerating) return; // Prevent duplicate generation if AI is already processing
 
     const messageText = inputMessage.trim();
     setInputMessage('');
     setChatGenerating(true);
 
-    const isImageGeneration = imageMode || messageText.toLowerCase().startsWith('draw ');
-    const finalSentPrompt = isImageGeneration && !messageText.toLowerCase().startsWith('draw ') 
-      ? `draw ${messageText}` 
-      : messageText;
+    // Immediately keep cursor focused in the text input box
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 10);
 
-    let promptWithAttachments = finalSentPrompt;
+    let promptWithAttachments = messageText;
     if (attachments.length > 0) {
       for (const att of attachments) {
         try {
@@ -1687,9 +1724,8 @@ export default function App() {
       { role: 'user' as const, content: promptWithAttachments, timestamp: Date.now() }
     ];
 
-    // Clear attachment state and image generator overrides
+    // Clear attachment state
     setAttachments([]);
-    setImageMode(false);
 
     // Generate stable chatId immediately for instant history entry
     const activeChatId = currentSession?.id || ('chat_' + Date.now() + '_' + Math.random().toString(36).substring(4, 9));
@@ -1698,7 +1734,7 @@ export default function App() {
     // optimistically align panel user bubble and add initial assistant streaming bubble
     const assistantBubble: MessageBubble = {
       role: 'assistant',
-      content: isImageGeneration ? '🎨 *Generating visual asset...*' : '',
+      content: '',
       timestamp: Date.now()
     };
 
@@ -1731,7 +1767,8 @@ export default function App() {
           messages: outgoingMessagesForApi,
           chatId: activeChatId,
           mode: chatMode,
-          imageCount: isImageGeneration ? imageCount : 1
+          deepThinking: deepThinking,
+          imageCount: 1
         })
       });
 
@@ -1889,6 +1926,9 @@ export default function App() {
       } : null);
     } finally {
       setChatGenerating(false);
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 30);
     }
   };
 
@@ -2197,8 +2237,25 @@ export default function App() {
             setIsSavingSettings(false);
           }
         }}
-        onSubmitPlan={async (planName, priceINR, queriesLimit, description) => {
-          const planId = 'plan_' + planName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        onSubmitPlan={async (planName, priceINR, queriesLimit, description, customId) => {
+          const planId = customId || ('plan_' + planName.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+          const updatedPlanPayload: PricingPlan = {
+            id: planId,
+            name: planName,
+            priceINR: Number(priceINR),
+            queriesLimit: Number(queriesLimit),
+            description: description,
+            createdAt: new Date().toISOString()
+          };
+
+          setSystemPlans(prev => {
+            const exists = prev.some(p => p.id === planId);
+            if (exists) {
+              return prev.map(p => p.id === planId ? { ...p, ...updatedPlanPayload } : p);
+            }
+            return [...prev, updatedPlanPayload];
+          });
+
           try {
             const idToken = await user!.getIdToken();
             const res = await fetch('/api/admin/plans', {
@@ -2207,24 +2264,18 @@ export default function App() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${idToken}`
               },
-              body: JSON.stringify({
-                id: planId,
-                name: planName,
-                priceINR: Number(priceINR),
-                queriesLimit: Number(queriesLimit),
-                description: description
-              })
+              body: JSON.stringify(updatedPlanPayload)
             });
             if (res.ok) {
-              setStatusMsg({ type: 'success', text: `Plan "${planName}" updated successfully` });
+              setStatusMsg({ type: 'success', text: `Plan "${planName}" saved successfully` });
               fetchPlans();
             }
           } catch (err: any) {
             setStatusMsg({ type: 'error', text: err.message || 'Error saving plan' });
+            fetchPlans();
           }
         }}
         onDeletePlan={async (id, name) => {
-          if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
           try {
             const idToken = await user!.getIdToken();
             const res = await fetch(`/api/admin/plans/${id}`, {
@@ -2280,10 +2331,18 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen bg-[#0A0A0C] flex flex-col md:flex-row font-sans text-gray-200 overflow-hidden">
+    <div className="h-screen bg-[#0A0A0C] flex flex-col lg:flex-row font-sans text-gray-200 overflow-hidden">
       
-      {/* SIDEBAR FOR DESKTOP - Shown in chat view */}
-      <aside className={`w-80 border-r border-[#DFB15F]/15 bg-[#111114]/90 backdrop-blur-md flex-col shrink-0 ${sidebarOpen ? 'fixed inset-0 z-50 flex' : (activeTab === 'chat' ? 'hidden md:flex' : 'hidden')}`}>
+      {/* Backdrop overlay for phones & tablets */}
+      {sidebarOpen && (
+        <div 
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/75 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* SIDEBAR FOR DESKTOP & MOBILE/TABLET DRAWER */}
+      <aside className={`border-r border-[#DFB15F]/15 bg-[#111114]/95 backdrop-blur-md flex-col shrink-0 transition-all duration-200 ${sidebarOpen ? 'fixed top-0 bottom-0 left-0 w-80 max-w-[85vw] z-50 flex shadow-2xl' : (activeTab === 'chat' ? 'hidden lg:flex lg:w-80' : 'hidden')}`}>
         
         {/* Sidebar Header */}
         <div className="h-16 border-b border-gold-900/10 flex items-center justify-between px-5">
@@ -2298,8 +2357,74 @@ export default function App() {
               Aurum<span className="text-[#DFB15F]">.</span>
             </span>
           </button>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white cursor-pointer">
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-400 hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Navigation Tabs (Mobile/Tablet Drawer) */}
+        <div className="p-3 border-b border-gold-900/10 bg-[#16161A]/40 lg:hidden space-y-1">
+          <button
+            onClick={() => {
+              setActiveTab('chat');
+              setSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+              activeTab === 'chat'
+                ? 'bg-[#DFB15F]/15 text-[#DFB15F] font-semibold border border-[#DFB15F]/30'
+                : 'text-gray-400 hover:bg-[#16161D] hover:text-white'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-gold-400" />
+            <span>Chat Assistant</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('sites');
+              setCurrentSession(null);
+              setSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+              activeTab === 'sites'
+                ? 'bg-[#DFB15F]/15 text-[#DFB15F] font-semibold border border-[#DFB15F]/30'
+                : 'text-gray-400 hover:bg-[#16161D] hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Globe className="w-4 h-4 text-gold-400" />
+              <span>Sites</span>
+            </div>
+            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Maintenance
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('api');
+              setCurrentSession(null);
+              setSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+              activeTab === 'api'
+                ? 'bg-[#DFB15F]/15 text-[#DFB15F] font-semibold border border-[#DFB15F]/30'
+                : 'text-gray-400 hover:bg-[#16161D] hover:text-white'
+            }`}
+          >
+            <Key className="w-4 h-4 text-gold-400" />
+            <span>API Docs</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setAccountModalOpen(true);
+              setSidebarOpen(false);
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono text-gray-400 hover:bg-[#16161D] hover:text-white transition-all cursor-pointer"
+          >
+            <User className="w-4 h-4 text-gold-400" />
+            <span>My Account</span>
           </button>
         </div>
 
@@ -2386,57 +2511,45 @@ export default function App() {
         </div>
       </aside>
 
-      {/* COMPANION NAVIGATION HEADER FOR MOBILE */}
-      <header className="md:hidden h-16 border-b border-gold-900/20 bg-[#111114] flex items-center justify-between px-4 sticky top-0 z-40">
-        <button
-          onClick={() => navigate('home')}
-          className="flex items-center gap-2.5 hover:text-[#DFB15F] transition-colors cursor-pointer text-left select-none"
-        >
-          <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#DFB15F] via-[#E9C37A] to-[#B3873B] flex items-center justify-center shadow-[0_0_12px_rgba(223,177,95,0.2)] border border-[#DFB15F]/20 select-none">
-            <span className="font-serif text-black font-bold text-sm leading-none">A</span>
-          </div>
-          <span className="font-serif text-md font-bold tracking-widest text-[#FCF8F2]">
-            Aurum<span className="text-[#DFB15F]">.</span>
-          </span>
-        </button>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setActiveTab('pricing')}
-            className={`p-2 rounded-lg ${activeTab === 'pricing' ? 'text-gold-300' : 'text-gray-400'}`}
-          >
-            <CreditCard className="w-5 h-5" />
-          </button>
-          <button onClick={() => setSidebarOpen(true)} className="p-2 text-gray-400 hover:text-white">
-            <Menu className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
-
       {/* MAIN VIEWPORT PANES */}
-      <main className="flex-1 flex flex-col bg-[#0A0A0C] min-w-0 relative">
+      <main className="flex-1 flex flex-col bg-[#0A0A0C] min-w-0 relative h-full min-h-0 overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(rgba(184,122,33,0.015),transparent)] pointer-events-none" />
 
         {/* HEADER BAR FOR LOGGED IN USERS */}
-        <header className="h-16 md:h-18 border-b border-gold-900/10 bg-[#111114]/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
-          <div className="flex items-center gap-2">
+        <header className="h-14 sm:h-16 border-b border-gold-900/10 bg-[#111114]/90 backdrop-blur-md flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 shrink-0 select-none">
+          <div className="flex items-center gap-2 min-w-0 shrink">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden p-1.5 text-gray-400 hover:text-white cursor-pointer mr-1"
+              className="lg:hidden p-1.5 text-gray-400 hover:text-white cursor-pointer shrink-0"
+              title="Open Navigation"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5 text-gold-400" />
             </button>
-            <div className="flex items-center gap-2 text-xs font-mono text-gray-500">
-              <span className="text-gold-300 font-medium font-sans text-sm">
-                {activeTab === 'chat' ? (currentSession ? currentSession.title : 'New chat') : activeTab === 'pricing' ? 'Upgrade' : activeTab === 'api' ? 'Developer API' : activeTab === 'sites' ? 'Website Builder' : 'Admin'}
-              </span>
-            </div>
+            <span className="text-gold-300 font-medium font-sans text-xs sm:text-sm truncate max-w-[130px] sm:max-w-[200px] md:max-w-[280px]">
+              {activeTab === 'chat' ? (currentSession ? currentSession.title : 'New chat') : activeTab === 'pricing' ? 'Upgrade' : activeTab === 'api' ? 'Developer API' : activeTab === 'sites' ? 'Website Builder' : 'Admin Panel'}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Dynamic Credits Badge */}
-            <div className="px-3 py-1.5 rounded-full bg-gold-950/40 border border-gold-900/15 flex items-center gap-1.5 text-[11px] text-[#DFB15F] font-mono tracking-wide">
+            <div 
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-gold-950/40 border border-gold-900/20 flex items-center gap-1.5 text-[10px] sm:text-[11px] text-[#DFB15F] font-mono tracking-wide shrink-0"
+              title={
+                getProfileQueriesLimit() === -1
+                  ? 'Unlimited high-priority queries'
+                  : ((getProfileQueriesLimit() + (profile?.topupCredits || 0)) - (profile?.queriesCount || 0)) > 0
+                    ? `${Math.max(0, (getProfileQueriesLimit() + (profile?.topupCredits || 0)) - (profile?.queriesCount || 0))} Priority Coins remaining. Unlimited free usage continues after coins expire.`
+                    : 'Priority coins used. You have unlimited free usage at standard priority!'
+              }
+            >
               <Sparkles className="w-3 h-3 text-gold-400 shrink-0" />
-              <span>{getProfileQueriesLimit() === -1 ? '✨ ∞' : `✨ ${Math.max(0, (getProfileQueriesLimit() + (profile?.topupCredits || 0)) - (profile?.queriesCount || 0))}`}</span>
+              <span>
+                {getProfileQueriesLimit() === -1
+                  ? '✨ ∞'
+                  : ((getProfileQueriesLimit() + (profile?.topupCredits || 0)) - (profile?.queriesCount || 0)) > 0
+                    ? `✨ ${Math.max(0, (getProfileQueriesLimit() + (profile?.topupCredits || 0)) - (profile?.queriesCount || 0))} Coins`
+                    : '✨ Unlimited Free'}
+              </span>
             </div>
 
             {/* Navigation tab links */}
@@ -2444,28 +2557,32 @@ export default function App() {
               onClick={() => {
                 setActiveTab('chat');
               }}
-              className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
                 activeTab === 'chat'
                   ? 'border-[#DFB15F] bg-[#DFB15F]/10 text-[#DFB15F]'
                   : 'border-gold-900/10 bg-[#16161A]/40 text-gray-400 hover:text-white'
               }`}
             >
-              <MessageSquare className="w-3.5 h-3.5 text-gold-400" />
+              <MessageSquare className="w-3.5 h-3.5 text-gold-400 shrink-0" />
               <span>Chat</span>
             </button>
 
             <button
               onClick={() => setActiveTab('pricing')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${activeTab === 'pricing' ? 'border-[#DFB15F] bg-[#DFB15F]/10 text-[#DFB15F]' : 'border-gold-900/15 text-gray-400 hover:border-gold-500/40 hover:text-white'}`}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                activeTab === 'pricing' 
+                  ? 'border-[#DFB15F] bg-[#DFB15F]/10 text-[#DFB15F]' 
+                  : 'border-gold-900/20 text-gray-300 hover:border-gold-500/40 hover:text-white'
+              }`}
             >
               Upgrade
             </button>
 
             <button
               onClick={() => setAccountModalOpen(true)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gold-900/10 bg-[#16161A]/40 text-xs font-mono text-gray-400 hover:text-white transition-all cursor-pointer"
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gold-900/10 bg-[#16161A]/40 text-xs font-mono text-gray-400 hover:text-white transition-all cursor-pointer"
             >
-              <User className="w-3.5 h-3.5 text-gold-400" />
+              <User className="w-3.5 h-3.5 text-gold-400 shrink-0" />
               <span>Account</span>
             </button>
 
@@ -2474,14 +2591,17 @@ export default function App() {
                 setActiveTab('sites');
                 setCurrentSession(null);
               }}
-              className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
                 activeTab === 'sites' 
                   ? 'border-[#DFB15F] bg-[#DFB15F]/10 text-[#DFB15F]' 
                   : 'border-gold-900/10 bg-[#16161A]/40 text-gray-400 hover:text-white'
               }`}
             >
-              <Globe className="w-3.5 h-3.5 text-gold-400" />
+              <Globe className="w-3.5 h-3.5 text-gold-400 shrink-0" />
               <span>Sites</span>
+              <span className="ml-1 text-[8px] font-bold uppercase tracking-wider px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Maintenance
+              </span>
             </button>
 
             <button
@@ -2489,22 +2609,22 @@ export default function App() {
                 setActiveTab('api');
                 setCurrentSession(null);
               }}
-              className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer text-xs font-mono ${
                 activeTab === 'api' 
                   ? 'border-[#DFB15F] bg-[#DFB15F]/10 text-[#DFB15F]' 
                   : 'border-gold-900/10 bg-[#16161A]/40 text-gray-400 hover:text-white'
               }`}
             >
-              <Key className="w-3.5 h-3.5 text-gold-400" />
+              <Key className="w-3.5 h-3.5 text-gold-400 shrink-0" />
               <span>API</span>
             </button>
 
             {isAdmin && (
               <button
                 onClick={() => navigate('admin')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gold-900/10 bg-[#16161A]/40 text-xs font-mono text-gray-400 hover:text-white hover:border-[#DFB15F]/40 transition-all cursor-pointer"
+                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gold-900/10 bg-[#16161A]/40 text-xs font-mono text-gray-400 hover:text-white hover:border-[#DFB15F]/40 transition-all cursor-pointer"
               >
-                <Shield className="w-3.5 h-3.5 text-gold-450" />
+                <Shield className="w-3.5 h-3.5 text-gold-400" />
                 <span>Admin</span>
               </button>
             )}
@@ -2512,8 +2632,8 @@ export default function App() {
             {/* Logout icon trigger */}
             <button
               onClick={handleSignOut}
-              className="p-1.5 rounded-lg border border-gold-900/10 text-gray-400 hover:text-red-400 hover:bg-red-950/10 cursor-pointer ml-1"
               title="Sign Out"
+              className="p-1.5 rounded-lg border border-gold-900/10 text-gray-400 hover:text-red-400 hover:bg-red-950/10 cursor-pointer transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -2771,21 +2891,245 @@ export default function App() {
               <div className="p-4 border-t border-gold-900/10 bg-[#111114]/50 hover:border-gold-900/20 sticky bottom-0 z-20">
                 <div className="max-w-3xl mx-auto space-y-3">
                   
-                  {/* Badge button: Create images & file attachments list */}
+                  {/* Controls: Model Dropdown & Settings */}
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2.5 flex-wrap">
+                      {/* Model Dropdown Menu */}
+                      <div className="relative" ref={modelDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+                          className="px-3 py-1 text-[11px] font-mono rounded-full flex items-center gap-2 cursor-pointer shadow-sm select-none transition-all duration-200 border bg-[#16161a]/95 border-gold-900/30 hover:border-[#DFB15F]/50 text-gold-200"
+                          title="Select AI Model"
+                        >
+                          {chatMode === 'deepseek-v4.1' && <Zap className="w-3.5 h-3.5 text-gold-400" />}
+                          {chatMode === 'agnes-3.0-flash' && <Sparkles className="w-3.5 h-3.5 text-gold-400" />}
+                          {chatMode === 'gpt-6-luna' && <span>🌙</span>}
+                          {chatMode === 'glm-5.3-flash' && <Globe className="w-3.5 h-3.5 text-gold-400" />}
+                          {chatMode === 'claude-sonnet-4-6' && <Brain className="w-3.5 h-3.5 text-purple-400" />}
+
+                          <span className="font-semibold text-white">
+                            {chatMode === 'deepseek-v4.1' && 'DeepSeek V4.1'}
+                            {chatMode === 'agnes-3.0-flash' && 'Agnes 3.0 Flash'}
+                            {chatMode === 'gpt-6-luna' && 'GPT-6 Luna'}
+                            {chatMode === 'glm-5.3-flash' && 'GLM-5.3 Flash'}
+                            {chatMode === 'claude-sonnet-4-6' && 'Claude Sonnet 4.6'}
+                          </span>
+
+                          {chatMode === 'gpt-6-luna' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider">
+                              Degraded
+                            </span>
+                          )}
+
+                          {chatMode === 'claude-sonnet-4-6' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-300 border border-purple-500/30 font-semibold">
+                              Claude Plan
+                            </span>
+                          )}
+
+                          <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${modelDropdownOpen ? 'rotate-180 text-gold-400' : ''}`} />
+                        </button>
+
+                        {/* Dropdown Menu Popup (positioned above button) */}
+                        {modelDropdownOpen && (
+                          <div className="absolute bottom-full mb-2 left-0 w-72 sm:w-80 bg-[#121216]/98 border border-gold-900/30 backdrop-blur-xl rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 animate-fade-in font-sans">
+                            <div className="px-3 py-2 border-b border-gold-900/15 flex items-center justify-between">
+                              <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-semibold">Select AI Model</span>
+                              <span className="text-[9px] font-mono text-gold-400/80">Unlimited free usage</span>
+                            </div>
+
+                            {/* 1. DeepSeek V4.1 */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatMode('deepseek-v4.1');
+                                setModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${
+                                chatMode === 'deepseek-v4.1'
+                                  ? 'bg-[#DFB15F]/15 border border-[#DFB15F]/40 shadow-sm'
+                                  : 'hover:bg-white/5 border border-transparent'
+                              }`}
+                            >
+                              <div className="p-1.5 rounded-lg bg-gold-950/60 border border-gold-900/30 text-gold-400 shrink-0 mt-0.5">
+                                <Zap className="w-4 h-4 text-gold-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-white tracking-wide">DeepSeek V4.1</span>
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">Free</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Primary sovereign engine · High intelligence & coding</p>
+                              </div>
+                              {chatMode === 'deepseek-v4.1' && <Check className="w-3.5 h-3.5 text-[#DFB15F] shrink-0 mt-1" />}
+                            </button>
+
+                            {/* 2. Agnes 3.0 Flash */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatMode('agnes-3.0-flash');
+                                setModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${
+                                chatMode === 'agnes-3.0-flash'
+                                  ? 'bg-[#DFB15F]/15 border border-[#DFB15F]/40 shadow-sm'
+                                  : 'hover:bg-white/5 border border-transparent'
+                              }`}
+                            >
+                              <div className="p-1.5 rounded-lg bg-gold-950/60 border border-gold-900/30 text-gold-400 shrink-0 mt-0.5">
+                                <Sparkles className="w-4 h-4 text-gold-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-white tracking-wide">Agnes 3.0 Flash</span>
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">Free</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Ultra-fast lightweight reasoning & high throughput</p>
+                              </div>
+                              {chatMode === 'agnes-3.0-flash' && <Check className="w-3.5 h-3.5 text-[#DFB15F] shrink-0 mt-1" />}
+                            </button>
+
+                            {/* 3. GPT-6 Luna with Degraded badge */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatMode('gpt-6-luna');
+                                setModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${
+                                chatMode === 'gpt-6-luna'
+                                  ? 'bg-[#DFB15F]/15 border border-[#DFB15F]/40 shadow-sm'
+                                  : 'hover:bg-white/5 border border-transparent'
+                              }`}
+                            >
+                              <div className="p-1.5 rounded-lg bg-gold-950/60 border border-gold-900/30 text-gold-400 shrink-0 mt-0.5">
+                                <span className="text-sm leading-none">🌙</span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-white tracking-wide">GPT-6 Luna</span>
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider">
+                                    Degraded
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-amber-300/80 mt-0.5 leading-snug">General synthesis (may occasionally hit rate limits)</p>
+                              </div>
+                              {chatMode === 'gpt-6-luna' && <Check className="w-3.5 h-3.5 text-[#DFB15F] shrink-0 mt-1" />}
+                            </button>
+
+                            {/* 4. GLM-5.3 Flash */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatMode('glm-5.3-flash');
+                                setModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 cursor-pointer ${
+                                chatMode === 'glm-5.3-flash'
+                                  ? 'bg-[#DFB15F]/15 border border-[#DFB15F]/40 shadow-sm'
+                                  : 'hover:bg-white/5 border border-transparent'
+                              }`}
+                            >
+                              <div className="p-1.5 rounded-lg bg-gold-950/60 border border-gold-900/30 text-gold-400 shrink-0 mt-0.5">
+                                <Globe className="w-4 h-4 text-gold-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-bold text-white tracking-wide">GLM-5.3 Flash</span>
+                                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">Free</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">Multilingual & structured synthesis</p>
+                              </div>
+                              {chatMode === 'glm-5.3-flash' && <Check className="w-3.5 h-3.5 text-[#DFB15F] shrink-0 mt-1" />}
+                            </button>
+
+                            <div className="border-t border-gold-900/20 my-1" />
+
+                            {/* 5. Claude Sonnet 4.6 (Paid Claude Plan) */}
+                            {(() => {
+                              const hasClaudeAccess = isAdmin || profile?.planId === 'plan_claude';
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!hasClaudeAccess) {
+                                      setStatusMsg({
+                                        type: 'error',
+                                        text: 'Claude Sonnet 4.6 is exclusive to the Claude Plan ($5/month). Navigate to Upgrade to unlock Claude!'
+                                      });
+                                      setActiveTab('pricing');
+                                      setModelDropdownOpen(false);
+                                      return;
+                                    }
+                                    setChatMode('claude-sonnet-4-6');
+                                    setModelDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start gap-3 ${
+                                    hasClaudeAccess
+                                      ? chatMode === 'claude-sonnet-4-6'
+                                        ? 'bg-purple-500/15 border border-purple-400/50 shadow-sm cursor-pointer'
+                                        : 'hover:bg-purple-950/20 border border-transparent cursor-pointer'
+                                      : 'opacity-65 bg-gray-900/40 border border-gray-800/60 cursor-pointer hover:opacity-90'
+                                  }`}
+                                >
+                                  <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 border ${
+                                    hasClaudeAccess
+                                      ? 'bg-purple-950/60 border-purple-500/30 text-purple-400'
+                                      : 'bg-gray-900 border-gray-700 text-gray-500'
+                                  }`}>
+                                    {hasClaudeAccess ? (
+                                      <Brain className="w-4 h-4 text-purple-400" />
+                                    ) : (
+                                      <Lock className="w-4 h-4 text-purple-400/80" />
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className={`text-xs font-bold tracking-wide ${hasClaudeAccess ? 'text-white' : 'text-gray-300'}`}>
+                                        Claude Sonnet 4.6
+                                      </span>
+                                      <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-semibold border ${
+                                        hasClaudeAccess
+                                          ? 'bg-purple-950/60 text-purple-300 border-purple-500/30'
+                                          : 'bg-purple-950/40 text-purple-400 border-purple-500/30'
+                                      }`}>
+                                        {hasClaudeAccess ? 'Active Plan' : '$5/mo'}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                                      {hasClaudeAccess
+                                        ? 'High-priority GPU compute & elite code reasoning'
+                                        : 'Requires Claude Plan ($5/mo) · Click to unlock'}
+                                    </p>
+                                  </div>
+                                  {hasClaudeAccess && chatMode === 'claude-sonnet-4-6' && (
+                                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-1" />
+                                  )}
+                                </button>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Deep Thinking Toggle */}
                       <button
                         type="button"
-                        onClick={() => setImageMode(!imageMode)}
-                        className={`px-3 py-1 text-[11px] font-mono rounded-full flex items-center gap-1.5 cursor-pointer shadow-sm select-none transition-all duration-300 border ${
-                          imageMode 
-                            ? 'bg-gold-500/20 border-[#DFB15F]/70 text-[#FCF8F2] font-semibold ring-1 ring-[#DFB15F]/35' 
-                            : 'bg-gold-950/40 border-gold-900/20 hover:bg-gold-900/30 hover:border-[#DFB15F]/40 text-gold-300'
+                        onClick={() => setDeepThinking(!deepThinking)}
+                        className={`px-3 py-1 rounded-full text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 border select-none ${
+                          deepThinking
+                            ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/60 shadow-sm ring-1 ring-cyan-400/30 font-semibold'
+                            : 'bg-[#16161a]/90 border-gold-900/20 text-gray-400 hover:text-cyan-300'
                         }`}
-                        title={imageMode ? "Deactivate Image Generation mode" : "Activate Image Generation mode"}
+                        title={deepThinking ? "Deep Thinking is ENABLED (In-depth step-by-step reasoning)" : "Deep Thinking is DISABLED (Click to enable in-depth reasoning)"}
                       >
-                        <Sparkles className={`w-3.5 h-3.5 ${imageMode ? 'text-[#DFB15F] animate-spin' : 'text-gold-400'}`} />
-                        <span>{imageMode ? 'Image Mode Active' : 'Create images'}</span>
+                        <Brain className={`w-3.5 h-3.5 ${deepThinking ? 'text-cyan-400 animate-pulse' : 'text-gray-400'}`} />
+                        <span>Deep Thinking</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deepThinking ? 'bg-cyan-400/30 text-cyan-100' : 'bg-gray-800 text-gray-400'}`}>
+                          {deepThinking ? 'ON' : 'OFF'}
+                        </span>
                       </button>
 
                       {attachments.length > 0 && (
@@ -2798,30 +3142,6 @@ export default function App() {
                         </button>
                       )}
 
-                      {imageMode && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 p-0.5 bg-black/40 border border-gold-900/10 rounded-full">
-                            <button
-                              type="button"
-                              onClick={() => setImageCount(1)}
-                              className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 1 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                            >
-                              1 Image (5 Cr)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setImageCount(2)}
-                              className={`px-2.5 py-0.5 rounded-full text-[9px] font-mono transition-all cursor-pointer ${imageCount === 2 ? 'bg-[#DFB15F]/20 text-gold-200 font-semibold shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                            >
-                              2 Images (10 Cr)
-                            </button>
-                          </div>
-                          <span className="text-[10px] font-mono text-amber-400/90 bg-amber-950/30 border border-amber-800/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                            Image generation might be slow as it is under beta
-                          </span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Renders list of attached document badges styled cleanly */}
@@ -2875,16 +3195,12 @@ export default function App() {
                     </button>
 
                     <input
+                      ref={chatInputRef}
                       type="text"
                       value={inputMessage}
                       onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder={
-                        imageMode 
-                          ? "Describe the visual asset to construct..." 
-                          : "Ask Aurum anything..."
-                      }
+                      placeholder="Ask Aurum anything..."
                       className="flex-1 bg-transparent border-0 px-2.5 py-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-0 font-sans"
-                      disabled={chatGenerating}
                     />
 
                     {/* Send button */}
@@ -2892,8 +3208,13 @@ export default function App() {
                       type="submit"
                       className="bg-[#DFB15F] hover:bg-gold-400 text-black py-2.5 px-3.5 rounded-lg shrink-0 font-mono font-bold transition-all disabled:opacity-30 hover:scale-[1.01] active:scale-[0.98] cursor-pointer flex items-center justify-center mr-1"
                       disabled={chatGenerating || !inputMessage.trim()}
+                      title={chatGenerating ? "AI is responding..." : "Send message"}
                     >
-                      <Send className="w-3.5 h-3.5 text-black" />
+                      {chatGenerating ? (
+                        <Loader2 className="w-3.5 h-3.5 text-black animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5 text-black" />
+                      )}
                     </button>
                   </form>
 
@@ -2903,10 +3224,6 @@ export default function App() {
                       <span>⏎ send</span>
                       <span>·</span>
                       <span>📎 image/PDF/code</span>
-                      <span>·</span>
-                      <span className="text-[#DFB15F]/75 animate-pulse">
-                        {imageMode ? "IMAGE MODE ENGAGED" : "type 'draw...' or toggle Mode"}
-                      </span>
                     </div>
                     <div>
                       <span>{(profile?.queriesCount || 0)} / {getProfileQueriesLimit() === -1 ? '∞' : (getProfileQueriesLimit() + (profile?.topupCredits || 0))} CR</span>
@@ -2924,7 +3241,7 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="flex-1 overflow-y-auto p-6 max-w-5xl mx-auto w-full py-10"
+              className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full py-10 min-h-0"
             >
               {selectedCheckoutPlan ? (
                 /* CHECKOUT VIEW */
@@ -3334,7 +3651,7 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="flex-1 overflow-y-auto p-4 md:p-6 max-w-5xl mx-auto w-full py-10 space-y-8 text-left"
+              className="flex-1 overflow-y-auto p-4 md:p-6 max-w-5xl mx-auto w-full py-10 space-y-8 text-left min-h-0"
             >
               <div className="border-b border-gold-900/20 pb-5">
                 <h2 className="font-serif text-3xl font-bold tracking-widest text-[#FCF8F2] uppercase flex items-center gap-3 select-none">
@@ -3663,28 +3980,62 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* TAB: LOVABLE WEBSITES COMPILER DASHBOARD */}
+          {/* TAB: AI MULTI-FILE WEBSITE CREATION STUDIO (PAUSED FOR MAINTENANCE) */}
           {activeTab === 'sites' && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="flex-1 overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full py-10 space-y-12 text-left"
+              className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full flex flex-col items-center justify-center min-h-[60vh] text-center"
+            >
+              <div className="bg-[#111116]/90 border border-amber-500/30 backdrop-blur-xl p-8 md:p-12 rounded-3xl shadow-2xl max-w-2xl w-full space-y-6 relative overflow-hidden">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+                
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/10">
+                  <Wrench className="w-8 h-8 animate-pulse" />
+                </div>
+
+                <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-semibold uppercase tracking-wider">
+                  <TriangleAlert className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Scheduled Maintenance</span>
+                </div>
+
+                <div className="space-y-3">
+                  <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+                    Sites Feature Paused for Maintenance
+                  </h2>
+                  <p className="text-sm text-gray-300 leading-relaxed font-sans max-w-md mx-auto">
+                    The Website Creation & Hosting engine is currently undergoing scheduled upgrades and maintenance.
+                    New site creation and editing options are temporarily paused and will be back online shortly!
+                  </p>
+                </div>
+
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className="w-full sm:w-auto bg-gradient-to-r from-[#DFB15F] to-[#b3883b] hover:from-[#e2b96f] hover:to-[#be9343] text-black font-bold text-xs px-6 py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Return to Chat Assistant</span>
+                  </button>
+                </div>
+
+                <div className="pt-4 border-t border-gray-800/80 text-[11px] font-mono text-gray-500 flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  <span>Engine Upgrade Status: In Progress</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {false && activeTab === 'sites_legacy' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex-1 overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full py-10 space-y-12 text-left min-h-0"
             >
               
-              {/* Build website dashboard top panel (Image 3 layout) */}
-              <div className="flex flex-col items-center text-center max-w-3xl mx-auto py-4 select-none">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-[#DFB15F] via-[#E9C37A] to-[#B3873B] flex items-center justify-center shadow-[0_0_25px_rgba(223,177,95,0.25)] border border-[#DFB15F]/20 mb-6">
-                  <Globe className="w-7 h-7 text-black" />
-                </div>
-                <h2 className="text-3.5xl font-serif font-bold text-white mb-3 tracking-wide">
-                  Build a full website
-                </h2>
-                <p className="text-xs text-gray-400 max-w-xl leading-relaxed">
-                  Aurum Engine powered by <span className="text-[#DFB15F] font-semibold">Claude Haiku 4.5</span> will architect, write, and design a magnificent full-scale website with atmospheric glassmorphism layouts, glowing ambient themes, and full Alpine.js state reactivity.
-                </p>
-              </div>
-
               {/* Website prompt generator bar console (Form container matches Image 3 exactly) */}
               <div className="bg-[#111114]/40 border border-[#DFB15F]/10 p-6 rounded-2xl max-w-2xl mx-auto w-full shadow-2xl relative overflow-hidden">
                 <form onSubmit={handleCreateSite} className="space-y-6">
@@ -3797,20 +4148,18 @@ export default function App() {
 
                     <button
                       type="submit"
-                      disabled={!isAdmin || siteCreating || !newSitePrompt.trim()}
-                      className="bg-gradient-to-r from-[#DFB15F] to-[#ECCF9A] hover:from-[#ECCF9A] hover:to-[#DFB15F] hover:scale-[1.01] active:scale-[0.98] text-black text-xs font-bold px-6 py-3.5 rounded-xl uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-2 select-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={siteCreating || !newSitePrompt.trim()}
+                      className="bg-gradient-to-r from-[#DFB15F] to-[#ECCF9A] hover:scale-[1.01] active:scale-[0.98] text-black text-xs font-bold px-6 py-3.5 rounded-xl uppercase tracking-wider transition-all cursor-pointer shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 select-none"
                     >
-                      {!isAdmin ? (
-                        <span>Under Maintenance</span>
-                      ) : siteCreating ? (
+                      {siteCreating ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />
-                          <span>Compiling app...</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Compiling Website...</span>
                         </>
                       ) : (
                         <>
-                          <Sparkles className="w-3.5 h-3.5 text-black shrink-0" />
-                          <span>Generate website</span>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Generate Website</span>
                         </>
                       )}
                     </button>
@@ -4650,7 +4999,8 @@ export default function App() {
                     className="w-full bg-[#0A0A0C] border border-gold-900/25 rounded-lg px-3 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-gold-500"
                   >
                     {[
-                      { id: 'plan_free', name: 'Free' },
+                      { id: 'plan_free', name: 'Free (Spark)' },
+                      { id: 'plan_claude', name: 'Claude Plan ($5/mo)' },
                       { id: 'plan_pro', name: 'Pro' },
                       { id: 'plan_pro_plus', name: 'Pro+' },
                       { id: 'plan_business', name: 'Business' },
@@ -4658,7 +5008,7 @@ export default function App() {
                     ].map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
-                    {systemPlans.filter(sp => !['plan_free', 'plan_pro', 'plan_pro_plus', 'plan_business', 'plan_unlimited'].includes(sp.id)).map(p => (
+                    {systemPlans.filter(sp => !['plan_free', 'plan_claude', 'plan_pro', 'plan_pro_plus', 'plan_business', 'plan_unlimited'].includes(sp.id)).map(p => (
                       <option key={p.id} value={p.id}>{p.name} (Custom catalog)</option>
                     ))}
                   </select>

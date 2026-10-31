@@ -8,12 +8,12 @@
       "photoURL": "https://api.dicebear.com/7.x/initials/svg?seed=ThunderBolt",
       "planId": "plan_free",
       "planName": "Free (Spark)",
-      "queriesCount": 24,
+      "queriesCount": 2,
       "topupCredits": 0,
       "planExpiresAt": null,
       "createdAt": "2026-09-03T14:15:40.072Z",
       "updatedAt": "2026-09-03T14:15:40.072Z",
-      "lastResetDate": "2026-09-04"
+      "lastResetDate": "2026-09-05"
     },
     "2dbad628-c8b0-4837-8dfd-bcd4fe288f80": {
       "id": "2dbad628-c8b0-4837-8dfd-bcd4fe288f80",
@@ -32,13 +32,6 @@
     }
   },
   "sessions": {
-    "aurum_sess_d233ec28e50ba724c07702201d2142aeb5edad4ce1320ddc39298cb23cfe289f": {
-      "token": "aurum_sess_d233ec28e50ba724c07702201d2142aeb5edad4ce1320ddc39298cb23cfe289f",
-      "userId": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
-      "email": "freefiregtamcpe@gmail.com",
-      "createdAt": "2026-09-03T14:15:40.072Z",
-      "expiresAt": "2026-10-03T14:15:40.072Z"
-    },
     "aurum_sess_61c3458d11fdc22c02339baf0a053e98b043f8f2e6767e8b7ee7c73a61754275": {
       "token": "aurum_sess_61c3458d11fdc22c02339baf0a053e98b043f8f2e6767e8b7ee7c73a61754275",
       "userId": "test-user-id",
@@ -101,31 +94,29 @@
       "email": "test_tester_123@gmail.com",
       "createdAt": "2026-09-04T04:28:51.458Z",
       "expiresAt": "2026-10-04T04:28:51.458Z"
+    },
+    "aurum_sess_test_runner_active": {
+      "token": "aurum_sess_test_runner_active",
+      "userId": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
+      "email": "freefiregtamcpe@gmail.com",
+      "createdAt": "2026-10-31T12:32:46.873Z",
+      "expiresAt": "2026-11-10T12:32:46.874Z"
     }
   },
   "settings": {
     "system": {
-      "nvidiaNimKey": "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",
-      "nvidiaNimEnabled": true,
-      "nvidiaNimProvider": "NVIDIA NIM (free)",
-      "nvidiaNimDisplayName": "NVIDIA NIM (build.nvidia.com)",
-      "nvidiaNimModel": "meta/llama-3.2-11b-vision-instruct",
-      "nvidiaNimChatModel": "meta/llama-3.2-11b-vision-instruct",
-      "nvidiaNimPriority": 1,
-      "nvidiaNimImageModel": "black-forest-labs/flux.1-dev",
+      "vyceApiUrl": "https://vyceai.com/v1/chat/completions",
+      "vyceApiKey": "sk-385822fcac9c0355680ccadd2a4288b474a2fb69c05f05c9",
+      "defaultChatModel": "deepseek-v4.1",
+      "claudeModel": "claude-sonnet-4-6",
+      "siteBuilderModel": "deepseek-v4.1",
       "oxapayKey": "",
       "adminEmails": [
         "teamthunderofficialyt@gmail.com",
         "freefiregtamcpe@gmail.com"
       ],
-      "updatedAt": "2026-09-04T04:28:47.288Z",
-      "id": "system",
-      "nvidiaNimSpecialistModel": "nvidia/nemotron-3-super-120b-a12b",
-      "hybraEnabled": true,
-      "hybraApiKey": "femboysex",
-      "hybraModel": "deepseek-v4-pro",
-      "hybraApiUrl": "https://hybra.lol/v1/chat/completions",
-      "showModelTag": false
+      "updatedAt": "2026-10-31T12:54:59.982Z",
+      "id": "system"
     }
   },
   "chats": {
@@ -290,6 +281,78 @@
         }
       ],
       "updatedAt": "2026-09-04T04:28:57.172Z"
+    },
+    "chat_1788621043715_lv93p": {
+      "id": "chat_1788621043715_lv93p",
+      "userId": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
+      "title": "👋 Hello",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello\n\n[SYSTEM DIRECTIVE: Always write your entire response strictly in clear English. Do NOT output Chinese or non-English text.]",
+          "timestamp": 1788621045566
+        },
+        {
+          "role": "assistant",
+          "content": "Hello, it's nice to meet you. I'm Aurum V2 Pro, a highly advanced and intelligent AI assistant here to provide you with accurate information and helpful assistance. How can I assist you today?",
+          "timestamp": 1788621045566
+        }
+      ],
+      "updatedAt": "2026-09-05T15:10:45.566Z"
+    },
+    "chat_1788621147026_qxopc": {
+      "id": "chat_1788621147026_qxopc",
+      "userId": "b2db64bd-f434-4134-a66d-9a327adcc1f9",
+      "title": "👋 Hello",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello\n\n[SYSTEM DIRECTIVE: Always write your entire response strictly in clear English. Do NOT output Chinese or non-English text.]",
+          "timestamp": 1788621163024
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I assist you today?",
+          "timestamp": 1788621163024
+        }
+      ],
+      "updatedAt": "2026-09-05T15:12:43.025Z"
+    },
+    "2be5f7b6-070f-4ca4-87a5-e174183df634": {
+      "id": "2be5f7b6-070f-4ca4-87a5-e174183df634",
+      "userId": "anonymous",
+      "title": "💬 What model are you?",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What model are you?",
+          "timestamp": 1793449334689
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Aurum V3 Pro V4.1, an AI assistant developed by Aurum V3 Pro (深度求索). Happy to help with whatever you're working on — what can I do for you?\n\n---\n*Model: `Aurum V3 Pro`*",
+          "timestamp": 1793449334689
+        }
+      ],
+      "updatedAt": "2026-10-31T12:22:14.689Z"
+    },
+    "642939cd-b335-4e01-844a-1980c320fe7d": {
+      "id": "642939cd-b335-4e01-844a-1980c320fe7d",
+      "userId": "anonymous",
+      "title": "👋 Say hello in 3 words",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Say hello in 3 words",
+          "timestamp": 1793451308092
+        },
+        {
+          "role": "assistant",
+          "content": "Hello from DeepSeek",
+          "timestamp": 1793451308092
+        }
+      ],
+      "updatedAt": "2026-10-31T12:55:08.093Z"
     }
   },
   "sites": {},
@@ -301,6 +364,15 @@
       "queriesLimit": 50,
       "description": "Standard daily generative capacity (50 priority queries per day).",
       "createdAt": "2026-09-03T13:32:23.891Z"
+    },
+    "plan_claude": {
+      "id": "plan_claude",
+      "name": "Claude Plan",
+      "priceINR": 420,
+      "priceUSD": 5,
+      "queriesLimit": 5000,
+      "description": "Exclusive Claude Sonnet 4.6 access, ultra-high priority compute lane, 5,000 priority queries/mo, and unlimited free generation.",
+      "createdAt": "2026-10-31T12:10:55.195Z"
     },
     "plan_starter": {
       "id": "plan_starter",
@@ -388,5 +460,19 @@
   },
   "transactions": {},
   "user_apis": {},
-  "user_api_keys": {}
+  "user_api_keys": {},
+  "api_logs": {
+    "log_1793451308093_4ov3": {
+      "id": "log_1793451308093_4ov3",
+      "userId": "anonymous",
+      "userEmail": "guest@aurum.ai",
+      "type": "text",
+      "model": "deepseek-v4.1",
+      "creditCost": 1,
+      "prompt": "Say hello in 3 words",
+      "endpoint": "/api/chat",
+      "status": "success",
+      "timestamp": 1793451308093
+    }
+  }
 }

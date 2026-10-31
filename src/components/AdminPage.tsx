@@ -50,7 +50,7 @@ interface AdminPageProps {
   };
   adminUsersList: UserProfile[];
   onSubmitKeys: (nnimKey: string, oxapayKey: string, extraSettings?: any) => Promise<void>;
-  onSubmitPlan: (planName: string, priceINR: number, queriesLimit: number, description: string) => Promise<void>;
+  onSubmitPlan: (planName: string, priceINR: number, queriesLimit: number, description: string, customId?: string) => Promise<void>;
   onDeletePlan: (id: string, name: string) => Promise<void>;
   onSaveUserEdit: (userId: string, planId: string, queriesCount: number, topupCredits: number) => Promise<void>;
   statusMsg: { type: 'success' | 'error'; text: string } | null;
@@ -83,8 +83,55 @@ export default function AdminPage({
   onToggleCoupon,
   onDeleteCoupon
 }: AdminPageProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'plans' | 'ai-providers' | 'payments' | 'coupons' | 'settings'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'plans' | 'ai-providers' | 'payments' | 'coupons' | 'settings' | 'logs'>('users');
   const [searchQuery, setSearchQuery] = useState('');
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState<string | null>(null);
+  const [deleteConfirmPlanId, setDeleteConfirmPlanId] = useState<string | null>(null);
+
+  // API Logs State
+  const [apiLogs, setApiLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logFilterType, setLogFilterType] = useState<'all' | 'text' | 'image'>('all');
+
+  const fetchApiLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const idToken = await user?.getIdToken?.();
+      const res = await fetch('/api/admin/logs', {
+        headers: {
+          'Authorization': idToken ? `Bearer ${idToken}` : ''
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApiLogs(data.logs || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch API logs:', err);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (activeSubTab === 'logs') {
+      fetchApiLogs();
+    }
+  }, [activeSubTab]);
+
+  const filteredLogs = apiLogs.filter(log => {
+    if (logFilterType !== 'all' && log.type !== logFilterType) return false;
+    if (!logSearchQuery.trim()) return true;
+    const q = logSearchQuery.toLowerCase();
+    return (
+      (log.userEmail || '').toLowerCase().includes(q) ||
+      (log.userId || '').toLowerCase().includes(q) ||
+      (log.model || '').toLowerCase().includes(q) ||
+      (log.prompt || '').toLowerCase().includes(q) ||
+      (log.endpoint || '').toLowerCase().includes(q)
+    );
+  });
 
   // Edit Seeker Modal State
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
@@ -92,6 +139,16 @@ export default function AdminPage({
     planId: '',
     queriesCount: 0,
     topupCredits: 0
+  });
+
+  // Edit Pricing Plan Modal State
+  const [editingPlan, setEditingPlan] = useState<PricingPlan | null>(null);
+  const [editPlanForm, setEditPlanForm] = useState({
+    id: '',
+    name: '',
+    priceINR: 249,
+    queriesLimit: 100,
+    description: ''
   });
 
   // Plan Creator Form State
@@ -117,7 +174,7 @@ export default function AdminPage({
 
   // Hybra API Primary Provider & Debug Model Tag states
   const [hybraApiKey, setHybraApiKey] = useState('femboysex');
-  const [hybraModel, setHybraModel] = useState('deepseek-v4-pro');
+  const [hybraModel, setHybraModel] = useState('gpt-5.6-sol');
   const [hybraApiUrl, setHybraApiUrl] = useState('https://hybra.lol/v1/chat/completions');
   const [hybraEnabled, setHybraEnabled] = useState(true);
   const [showModelTag, setShowModelTag] = useState(false);
@@ -163,6 +220,36 @@ export default function AdminPage({
       setEditingUser(null);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleOpenEditPlan = (plan: PricingPlan) => {
+    setEditingPlan(plan);
+    setEditPlanForm({
+      id: plan.id,
+      name: plan.name,
+      priceINR: plan.priceINR,
+      queriesLimit: plan.queriesLimit,
+      description: plan.description || ''
+    });
+  };
+
+  const handleSavePlanEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlan) return;
+    try {
+      await onSubmitPlan(
+        editPlanForm.name,
+        editPlanForm.priceINR,
+        editPlanForm.queriesLimit,
+        editPlanForm.description,
+        editPlanForm.id
+      );
+      setEditingPlan(null);
+      setStatusMsg({ type: 'success', text: `Plan "${editPlanForm.name}" updated successfully.` });
+    } catch (err) {
+      console.error(err);
+      setStatusMsg({ type: 'error', text: 'Failed to update plan.' });
     }
   };
 
@@ -238,12 +325,13 @@ export default function AdminPage({
   };
 
   const deleteCoupon = async (code: string) => {
-    if (!confirm(`Are you sure you want to delete coupon "${code}"?`)) return;
     try {
       await onDeleteCoupon(code);
+      setDeleteConfirmCode(null);
       setStatusMsg({ type: 'success', text: `Coupon "${code}" deleted.` });
     } catch (err) {
       console.error(err);
+      setStatusMsg({ type: 'error', text: `Failed to delete coupon "${code}".` });
     }
   };
 
@@ -322,6 +410,7 @@ export default function AdminPage({
               { id: 'ai-providers', label: 'AI Providers', icon: Cpu },
               { id: 'payments', label: 'Payments', icon: CreditCard },
               { id: 'coupons', label: 'Coupons', icon: Tag },
+              { id: 'logs', label: 'API Logs', icon: Activity },
               { id: 'settings', label: 'Settings', icon: Sliders }
             ].map((tab) => {
               const Icon = tab.icon;
@@ -378,7 +467,7 @@ export default function AdminPage({
               {/* HEADER LABELS */}
               <div>
                 <h1 className="font-serif text-3.5xl font-semibold tracking-tight text-[#FCF8F2] capitalize">
-                  {activeSubTab === 'ai-providers' ? 'AI Providers' : activeSubTab}
+                  {activeSubTab === 'ai-providers' ? 'AI Providers' : activeSubTab === 'logs' ? 'API Request Logs' : activeSubTab}
                 </h1>
                 <p className="text-xs text-gray-400 mt-1">
                   {activeSubTab === 'users' && 'Manage all accounts, roles, credits and plan assignments.'}
@@ -386,6 +475,7 @@ export default function AdminPage({
                   {activeSubTab === 'ai-providers' && 'Configure external AI models, API keys and endpoint endpoints.'}
                   {activeSubTab === 'payments' && 'Manage merchant accounts, checkout Gateways and transaction records.'}
                   {activeSubTab === 'coupons' && 'Define coupon codes, seasonal discounts and loyalty vouchers.'}
+                  {activeSubTab === 'logs' && 'Inspect real-time API requests, users, models used, and credit costs for text & image generations.'}
                   {activeSubTab === 'settings' && 'Review workspace operational indicators, global values and connections.'}
                 </p>
               </div>
@@ -595,13 +685,47 @@ export default function AdminPage({
                                 )}
                               </td>
                               <td className="py-3 text-right">
-                                <button
-                                  onClick={() => onDeletePlan(sp.id, sp.name)}
-                                  className="text-red-400 hover:text-red-300 p-1 bg-red-950/10 rounded cursor-pointer transition-all"
-                                  title="Delete Plan"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {deleteConfirmPlanId === sp.id ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await onDeletePlan(sp.id, sp.name);
+                                        setDeleteConfirmPlanId(null);
+                                      }}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[10px] font-mono font-bold rounded cursor-pointer transition-all shadow-sm"
+                                    >
+                                      Confirm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmPlanId(null)}
+                                      className="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[10px] font-mono rounded cursor-pointer transition-all"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditPlan(sp)}
+                                      className="text-[#DFB15F] hover:text-gold-200 p-1 bg-gold-950/20 hover:bg-[#DFB15F]/10 rounded border border-gold-900/30 cursor-pointer transition-all flex items-center gap-1 text-[11px] font-sans font-semibold"
+                                      title="Edit Plan Parameters"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>Edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmPlanId(sp.id)}
+                                      className="text-red-400 hover:text-red-300 p-1 bg-red-950/10 rounded cursor-pointer transition-all"
+                                      title="Delete Plan"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1107,13 +1231,33 @@ export default function AdminPage({
                                 </button>
                               </td>
                               <td className="py-3 text-right">
-                                <button
-                                  onClick={() => deleteCoupon(c.code)}
-                                  className="text-red-400 hover:text-red-300 p-1 bg-red-950/10 rounded cursor-pointer transition-all"
-                                  title="Remove Coupon"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {deleteConfirmCode === c.code ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteCoupon(c.code)}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-[10px] font-mono font-bold rounded cursor-pointer transition-all shadow-sm"
+                                    >
+                                      Confirm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmCode(null)}
+                                      className="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-[10px] font-mono rounded cursor-pointer transition-all"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteConfirmCode(c.code)}
+                                    className="text-red-400 hover:text-red-300 p-1 bg-red-950/10 rounded cursor-pointer transition-all"
+                                    title="Remove Coupon"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1185,6 +1329,192 @@ export default function AdminPage({
                 </div>
               )}
 
+              {/* VIEW 7: API REQUEST LOGS PANEL */}
+              {activeSubTab === 'logs' && (
+                <div className="space-y-6">
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-[#111114]/50 border border-gold-900/15 rounded-xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-400 mb-2">
+                        <span>Total Requests</span>
+                        <Activity className="w-4 h-4 text-[#DFB15F]" />
+                      </div>
+                      <div className="text-2xl font-bold font-serif text-gold-100">{apiLogs.length}</div>
+                      <p className="text-[10px] text-gray-500 mt-1">Logged API calls</p>
+                    </div>
+
+                    <div className="bg-[#111114]/50 border border-gold-900/15 rounded-xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-400 mb-2">
+                        <span>Text Generations</span>
+                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="text-2xl font-bold font-serif text-emerald-400">
+                        {apiLogs.filter(l => l.type === 'text').length}
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1">1 Coin per response</p>
+                    </div>
+
+                    <div className="bg-[#111114]/50 border border-gold-900/15 rounded-xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-400 mb-2">
+                        <span>Image Generations</span>
+                        <Cpu className="w-4 h-4 text-purple-400" />
+                      </div>
+                      <div className="text-2xl font-bold font-serif text-purple-400">
+                        {apiLogs.filter(l => l.type === 'image').length}
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1">5 Coins per image</p>
+                    </div>
+
+                    <div className="bg-[#111114]/50 border border-gold-900/15 rounded-xl p-4 shadow-sm">
+                      <div className="flex items-center justify-between text-xs font-mono uppercase text-gray-400 mb-2">
+                        <span>Credits Consumed</span>
+                        <Award className="w-4 h-4 text-[#DFB15F]" />
+                      </div>
+                      <div className="text-2xl font-bold font-serif text-[#DFB15F]">
+                        {apiLogs.reduce((acc, l) => acc + (Number(l.creditCost) || 0), 0)} CR
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1">Total coins deducted</p>
+                    </div>
+                  </div>
+
+                  {/* Log Filtering & Controls Bar */}
+                  <div className="bg-[#111114]/30 border border-gold-900/15 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:w-64">
+                        <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={logSearchQuery}
+                          onChange={(e) => setLogSearchQuery(e.target.value)}
+                          placeholder="Search email, model, prompt..."
+                          className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg pl-9 pr-3.5 py-2 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#DFB15F] transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <div className="flex bg-[#0A0A0C] p-1 rounded-lg border border-gold-900/15 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setLogFilterType('all')}
+                          className={`px-3 py-1 rounded cursor-pointer transition-all ${logFilterType === 'all' ? 'bg-[#DFB15F] text-black font-semibold' : 'text-gray-400 hover:text-gray-200'}`}
+                        >
+                          All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogFilterType('text')}
+                          className={`px-3 py-1 rounded cursor-pointer transition-all ${logFilterType === 'text' ? 'bg-emerald-500 text-black font-semibold' : 'text-gray-400 hover:text-gray-200'}`}
+                        >
+                          Text (1 CR)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogFilterType('image')}
+                          className={`px-3 py-1 rounded cursor-pointer transition-all ${logFilterType === 'image' ? 'bg-purple-500 text-black font-semibold' : 'text-gray-400 hover:text-gray-200'}`}
+                        >
+                          Image (5 CR)
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={fetchApiLogs}
+                        disabled={isLoadingLogs}
+                        className="px-3 py-1.5 bg-[#111114] hover:bg-[#1A1A1E] text-gold-300 border border-gold-900/30 rounded-lg text-xs font-mono font-medium flex items-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        {isLoadingLogs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+                        <span>Refresh Logs</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Table Display */}
+                  <div className="bg-[#111114]/30 border border-gold-900/15 rounded-xl overflow-hidden shadow-sm">
+                    <div className="p-4 border-b border-gold-900/10 flex items-center justify-between">
+                      <h2 className="font-serif text-md font-semibold text-gold-100 flex items-center gap-2">
+                        <Activity className="w-4.5 h-4.5 text-[#DFB15F]" />
+                        <span>Recent API Request Activity ({filteredLogs.length})</span>
+                      </h2>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-gold-900/10 bg-[#111114]/50 text-gray-400 font-mono text-[10px] uppercase tracking-wider">
+                            <th className="py-3 px-4">Timestamp</th>
+                            <th className="py-3 px-4">User</th>
+                            <th className="py-3 px-4">Type</th>
+                            <th className="py-3 px-4">Model Used</th>
+                            <th className="py-3 px-4">Credit Cost</th>
+                            <th className="py-3 px-4">Prompt Preview</th>
+                            <th className="py-3 px-4">Endpoint</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gold-900/10 text-gray-300">
+                          {filteredLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-12 text-center text-gray-500 font-mono">
+                                {isLoadingLogs ? (
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin text-[#DFB15F]" />
+                                    <span>Fetching live API request stream...</span>
+                                  </div>
+                                ) : (
+                                  'No API requests logged yet. Execute a chat or call developer endpoints to record activity!'
+                                )}
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredLogs.map((log) => (
+                              <tr key={log.id} className="hover:bg-gold-950/10 transition-colors">
+                                <td className="py-3 px-4 font-mono text-[11px] text-gray-400 whitespace-nowrap">
+                                  {new Date(log.timestamp).toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-gray-200">
+                                  <div className="font-medium text-gold-200">{log.userEmail || log.userId}</div>
+                                  <div className="text-[9px] text-gray-500 truncate max-w-[120px]">{log.userId}</div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  {log.type === 'image' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-950/40 text-purple-300 border border-purple-800/40">
+                                      Image (5 CR)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/40 text-emerald-300 border border-emerald-800/40">
+                                      Text (1 CR)
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-xs font-semibold text-gray-200">
+                                  <span className="bg-[#0A0A0C] px-2 py-1 rounded border border-gold-900/20 text-[#DFB15F]">
+                                    {log.model}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-mono font-bold text-gold-300">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3 text-[#DFB15F]" />
+                                    <span>{log.creditCost} CR</span>
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-gray-300 max-w-xs truncate" title={log.prompt}>
+                                  {log.prompt || <span className="text-gray-600 italic">No prompt content</span>}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-[10px] text-gray-400">
+                                  <span className="bg-[#0A0A0C] px-2 py-0.5 rounded border border-gold-900/10">
+                                    {log.endpoint}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </motion.div>
           </AnimatePresence>
         </main>
@@ -1224,11 +1554,12 @@ export default function AdminPage({
                   className="w-full bg-[#0A0A0C] border border-gold-900/25 rounded-lg px-3 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F]"
                 >
                   <option value="plan_free">Free (Initial)</option>
+                  <option value="plan_claude">Claude Plan ($5/mo)</option>
                   <option value="plan_pro">Pro (Starter)</option>
                   <option value="plan_pro_plus">Pro+ (Elite)</option>
                   <option value="plan_business">Business (Professional)</option>
                   <option value="plan_unlimited">Unlimited (Enterprise)</option>
-                  {systemPlans.filter(sp => !['plan_free', 'plan_pro', 'plan_pro_plus', 'plan_business', 'plan_unlimited'].includes(sp.id)).map(p => (
+                  {systemPlans.filter(sp => !['plan_free', 'plan_claude', 'plan_pro', 'plan_pro_plus', 'plan_business', 'plan_unlimited'].includes(sp.id)).map(p => (
                     <option key={p.id} value={p.id}>{p.name} (Custom catalog)</option>
                   ))}
                 </select>
@@ -1265,6 +1596,107 @@ export default function AdminPage({
               >
                 Apply credentials
               </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* PRICING PLAN EDITOR MODAL */}
+      {editingPlan && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[#111114] border border-[#DFB15F]/30 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-[0_10px_50px_rgba(0,0,0,0.8)]"
+          >
+            <div className="flex justify-between items-center pb-3 border-b border-gold-900/10">
+              <h3 className="font-serif text-md font-bold text-[#FCF8F2] uppercase tracking-widest flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#DFB15F]" />
+                <span>Edit Pricing Plan</span>
+              </h3>
+              <button onClick={() => setEditingPlan(null)} className="text-gray-400 hover:text-white cursor-pointer p-0.5">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePlanEdit} className="space-y-4">
+              <div>
+                <p className="text-[10px] text-gray-500 mb-1 font-mono uppercase tracking-wider">Plan Identifier (ID)</p>
+                <div className="bg-[#0A0A0C] border border-gold-900/10 rounded-lg px-3 py-2 text-xs font-mono text-gold-400 select-all">
+                  {editPlanForm.id}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono uppercase text-gold-400 mb-1.5 font-medium">Tier Plan Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editPlanForm.name}
+                    onChange={(e) => setEditPlanForm({ ...editPlanForm, name: e.target.value })}
+                    className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-mono uppercase text-gold-400 mb-1.5 font-medium">Cost in INR (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={editPlanForm.priceINR}
+                    onChange={(e) => setEditPlanForm({ ...editPlanForm, priceINR: Number(e.target.value) })}
+                    className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono uppercase text-gold-400 mb-1.5 font-medium">Queries Allowed Limit</label>
+                  <input
+                    type="number"
+                    required
+                    min="-1"
+                    value={editPlanForm.queriesLimit}
+                    onChange={(e) => setEditPlanForm({ ...editPlanForm, queriesLimit: Number(e.target.value) })}
+                    className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all"
+                  />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <span className="text-[10px] text-gray-500 leading-normal pb-1 font-mono italic">
+                    * Input -1 for unlimited query access.
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono uppercase text-gold-400 mb-1.5 font-medium">Benefits Summary</label>
+                <input
+                  type="text"
+                  required
+                  value={editPlanForm.description}
+                  onChange={(e) => setEditPlanForm({ ...editPlanForm, description: e.target.value })}
+                  className="w-full bg-[#0A0A0C] border border-gold-900/20 rounded-lg px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-[#DFB15F] transition-all"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-3">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#DFB15F] hover:bg-gold-500 text-black text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                >
+                  <Save className="w-4 h-4 text-black" />
+                  <span>Update Plan Parameters</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPlan(null)}
+                  className="px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-gray-300 text-xs font-medium rounded-lg transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
             </form>
           </motion.div>
         </div>

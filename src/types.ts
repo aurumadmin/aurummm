@@ -61,3 +61,35 @@ export interface Coupon {
   planId: string;
   active: boolean;
 }
+
+export interface ProjectFile {
+  path: string;
+  content: string;
+}
+
+export interface WebProject {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  framework: 'react-vite' | 'vanilla' | 'html';
+  files: Record<string, string>;
+  dependencies?: Record<string, string>;
+  buildState: 'idle' | 'building' | 'success' | 'failed';
+  buildLogs?: string[];
+  buildError?: string | null;
+  createdAt: number;
+  updatedAt: number;
+  creditsSpent?: number;
+}
+
+export interface Site {
+  id: string;
+  userId: string;
+  prompt: string;
+  title: string;
+  code: string;
+  files?: Record<string, string>;
+  createdAt: number;
+  creditsSpent?: number;
+}
