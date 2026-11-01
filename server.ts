@@ -1404,12 +1404,31 @@ If this is a website, UI, mobile screen, graphic, or document:
       vyceCandidates.push('deepseek-v4.1');
     }
 
-    // Set streaming headers for SSE
+    // Set streaming headers for SSE (cPanel / LiteSpeed / Nginx anti-buffering compliant)
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Cache-Control', 'no-cache, no-transform, no-store');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('X-LiteSpeed-Buffer', 'off');
     if ((res as any).flushHeaders) (res as any).flushHeaders();
+
+    // Flush an immediate keepalive ping to prevent LiteSpeed/Passenger initial 30s connection timeout
+    res.write(': keepalive\n\n');
+    if ((res as any).flush) (res as any).flush();
+
+    // Active heartbeat timer to keep TCP connection alive every 3s while AI generates
+    const heartbeatTimer = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': keepalive\n\n');
+        if ((res as any).flush) (res as any).flush();
+      } else {
+        clearInterval(heartbeatTimer);
+      }
+    }, 3000);
+
+    req.on('close', () => {
+      clearInterval(heartbeatTimer);
+    });
 
     let fullAnswer = '';
     let success = false;
@@ -1603,6 +1622,7 @@ If this is a website, UI, mobile screen, graphic, or document:
       saveOnClient = true;
     }
 
+    clearInterval(heartbeatTimer);
     res.write(`data: ${JSON.stringify({
       done: true,
       answer: fullAnswer,

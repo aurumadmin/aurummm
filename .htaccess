@@ -6,8 +6,22 @@ PassengerAppType node
 PassengerStartupFile app.js
 # DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
 
-# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS BEGIN
-# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS END
+# LITESPEED / APACHE CPANEL TIMEOUT & BUFFERING FIX
+<IfModule LiteSpeed>
+  RewriteEngine On
+  # Prevent LiteSpeed Web Server from aborting long-running requests or buffering AI streaming responses
+  RewriteRule .* - [E=noabort:1,E=nongzip:1,E=dont-vari:1]
+</IfModule>
+
+<IfModule mod_env.c>
+  SetEnv no-gzip 1
+  SetEnv noabort 1
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header set X-LiteSpeed-Buffer "off"
+  Header set X-Accel-Buffering "no"
+</IfModule>
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
