@@ -1,0 +1,16 @@
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot "/home/username/public_html"
+PassengerBaseURI "/"
+PassengerNodejs "/home/username/nodevenv/public_html/22/bin/node"
+PassengerAppType node
+PassengerStartupFile app.js
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS BEGIN
+# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS END
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
