@@ -22,6 +22,7 @@ function getVyceKeysPool(settingsData?: any): string[] {
   return Array.from(new Set(keys.filter(k => typeof k === 'string' && k.trim().length > 0)));
 }
 
+const DEFAULT_NVIDIA_NIM_KEY = '';
 const DEFAULT_MODEL = 'deepseek-v4.1';
 const FREE_MODELS = ['deepseek-v4.1', 'agnes-3.0-flash', 'gpt-6-luna', 'glm-5.3-flash'];
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
@@ -1592,7 +1593,7 @@ If this is a website, UI, mobile screen, graphic, or document:
         userId: uid,
         userEmail: (req.user as any)?.email,
         type: 'text',
-        model: answeredModel || modelToUse,
+        model: answeredModel || primaryModel,
         creditCost: 1,
         prompt: userPromptText,
         endpoint: '/api/chat'
@@ -2395,7 +2396,7 @@ app.post('/api/v1/execute/:apiId', async (req, res) => {
 async function resolveDeveloperUid(req: any): Promise<{ uid: string; keyDocId?: string; error?: string; status?: number }> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { error: 'Missing Developer API Key in Authorization header', status: 401 };
+    return { uid: '', error: 'Missing Developer API Key in Authorization header', status: 401 };
   }
   const apiToken = authHeader.split('Bearer ')[1].trim();
 
@@ -2411,13 +2412,13 @@ async function resolveDeveloperUid(req: any): Promise<{ uid: string; keyDocId?: 
         const keyDoc = keysSnap.docs[0];
         return { uid: keyDoc.data().userId, keyDocId: keyDoc.id };
       } else {
-        return { error: 'Invalid Developer API secret key', status: 401 };
+        return { uid: '', error: 'Invalid Developer API secret key', status: 401 };
       }
     } catch (err: any) {
-      return { error: 'Internal API Token resolution error', status: 500 };
+      return { uid: '', error: 'Internal API Token resolution error', status: 500 };
     }
   } else {
-    return { error: 'Invalid Developer API Key. Must start with aurum_sk_... or aurum_live_...', status: 401 };
+    return { uid: '', error: 'Invalid Developer API Key. Must start with aurum_sk_... or aurum_live_...', status: 401 };
   }
 }
 
@@ -2568,7 +2569,7 @@ app.post(['/api/v1/chat/completions', '/v1/chat/completions'], async (req, res) 
     recordApiLog({
       userId: uid,
       type: 'text',
-      model: modelToUse,
+      model: targetModel,
       creditCost: 1,
       prompt: typeof lastUserMsg === 'string' ? lastUserMsg : JSON.stringify(lastUserMsg),
       endpoint: '/v1/chat/completions'
